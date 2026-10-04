@@ -16,6 +16,12 @@ byte-identical with creslo-frontend/src/remotion/* (the live preview). Every com
 change requires a Lambda site redeploy to affect customer renders:
 `npx remotion lambda sites create src/index.ts --site-name=creslo-reels`
 
+## Moving adverts mirror (3 Oct 2026)
+`src/lib/ad/` (adStudioEngine.ts, brandFonts.ts, adMotion.ts) are byte-identical copies of
+creslo-frontend/src/lib. `AdMotion.tsx` builds the advert from them out of PLAIN DATA only - never
+HTML or CSS from a request - and escapes every word itself. `npm test` (run by `npm run deploy`)
+fails if the copies drift: copy the frontend files over, never edit these by hand.
+
 ## Brand rule
 The Creslo logo is ALWAYS the rounded-square OUTLINE containing the serif "C." mark.
 

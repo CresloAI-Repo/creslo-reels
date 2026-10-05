@@ -213,6 +213,28 @@ const AD_CSS_RAW = `#cad{transform-origin:top left;position:absolute;top:0;left:
 #cad.spotlight .cta{display:inline-block;margin-top:22px;background:var(--accent-fill);color:var(--on-accent-fill);font-weight:700;font-size:18px;padding:14px 30px;border-radius:40px}
 #cad.spotlight .url{position:absolute;bottom:38px;left:50%;transform:translateX(-50%);font-size:13px;letter-spacing:.22em;color:var(--ink-on-dark);opacity:.8;z-index:3}
 
+/* ---- cutout (product cut out of its photo, on the brand's own colours) - 5 Oct 2026, step 2 of
+   the premium adverts. The product sits on its own, background removed (fal Bria RMBG 2.0 via the
+   backend), large on the right over a soft halo, with the copy in its own column on the left so
+   words and product never share pixels. --cut is the cut-out PNG; the look is only offered when
+   one exists (Ad Studio). ---- */
+#cad.cutout{background:radial-gradient(40% 44% at 76% 66%,color-mix(in srgb,var(--accent) 60%,var(--ground)),var(--ground))}
+#cad.cutout .halo{position:absolute;right:-70px;top:250px;width:660px;height:660px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,255,255,.22),rgba(255,255,255,0));pointer-events:none}
+#cad.cutout .pic{position:absolute;right:40px;top:230px;bottom:70px;width:500px;background-image:var(--cut);background-size:contain;background-repeat:no-repeat;background-position:center bottom;filter:drop-shadow(0 34px 34px rgba(0,0,0,.38)) drop-shadow(0 6px 10px rgba(0,0,0,.22));z-index:2}
+#cad.cutout .brandrow{position:absolute;top:56px;left:64px;z-index:3}
+#cad.cutout .mono{background:var(--panel);color:var(--accent-text);font-size:24px}
+#cad.cutout .bn{color:var(--on-ground);font-size:20px}
+#cad.cutout .block{position:absolute;left:64px;top:170px;width:450px;bottom:120px;display:flex;flex-direction:column;justify-content:safe center;z-index:3}
+#cad.cutout .block>*{flex-shrink:0;max-width:100%}
+#cad.cutout .tagbadge{margin-bottom:16px;align-self:flex-start}
+#cad.cutout .eyebrow{font-weight:700;font-size:17px;letter-spacing:.26em;text-transform:uppercase;color:var(--on-ground);opacity:.86;margin-bottom:16px}
+#cad.cutout .headline{font-family:var(--hfont);font-weight:700;font-size:64px;line-height:1.02;color:var(--on-ground)}
+#cad.cutout .headline em{color:var(--em-on-ground)}
+#cad.cutout .sub{margin-top:18px;font-size:21px;line-height:1.45;color:var(--on-ground);opacity:.9}
+#cad.cutout .taglist{margin-top:18px}
+#cad.cutout .cta{align-self:flex-start;margin-top:26px;background:var(--accent-fill);color:var(--on-accent-fill);font-weight:700;font-size:19px;padding:15px 30px;border-radius:40px;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--on-ground) 60%,transparent)}
+#cad.cutout .url{position:absolute;bottom:46px;left:64px;font-size:13px;letter-spacing:.22em;color:var(--on-ground);opacity:.8;z-index:3}
+
 /* ---- menu (food: menu board) ---- */
 #cad.menu{background:var(--surface);color:var(--ink);padding:80px 74px;display:flex;flex-direction:column}
 #cad.menu .brandrow{margin-bottom:38px}
@@ -1084,6 +1106,11 @@ export const TREATMENTS = {
       <div class="brandrow">${p.logo?`<img class="blogo" src="${p.logo}">`:''}${p.name?`<div class="bn">${p.name}</div>`:''}</div>
       <div class="block">${tagBadge(p.badge)}<div class="eyebrow">${p.eyebrow}</div><h2 class="headline">${p.headline}</h2>${tagList(p.chips)}${p.cta?`<div class="cta">${p.cta}</div>`:''}</div>
       <div class="url">creslo.ai</div>` },
+  cutout: { label:'Cut-out', note:'Your product, cut out', ratio:1080, font:"'DM Serif Display',serif", mood:'vibrant', trial:true, fit:{headline:6,sub:14,eyebrow:4},
+    render:p=>`<div class="halo"></div><div class="pic"></div>
+      <div class="brandrow">${p.logo?`<img class="blogo" src="${p.logo}">`:''}${p.name?`<div class="bn">${p.name}</div>`:''}</div>
+      <div class="block">${tagBadge(p.badge)}<div class="eyebrow">${p.eyebrow}</div><h2 class="headline">${p.headline}</h2>${p.sub?`<div class="sub">${p.sub}</div>`:''}${tagList(p.chips)}${p.cta?`<div class="cta">${p.cta} &rarr;</div>`:''}</div>
+      <div class="url">creslo.ai</div>` },
   menu: { label:'Menu board', note:'Food: items + prices', ratio:1350, mood:'light', font:"'DM Serif Display',serif", fit:{headline:9,sub:null,eyebrow:4}, need:['.rows .mr'],
     render:p=>{
       const items=listOf(p.items||p.chips)
@@ -1531,7 +1558,29 @@ function _contrast(a,b){ const la=_relLum(a),lb=_relLum(b); return (Math.max(la,
 // given and differs from the first, buttons, badges and chips (--accent-fill / --on-accent-fill) are
 // drawn in it - deepened only as far as the 4.5:1 button rule needs - while grounds, emphasis and
 // decoration stay the first colour. A brand with one colour gets exactly what it got before.
-export function deriveBrandPalette(hex, hex2 = ''){
+export function deriveBrandPalette(hex, hex2 = '', tone = ''){
+  // THE GROUND FOLLOWS THE PHOTO WHEN THE BRAND CANNOT (Daniel, 5 Oct 2026; lib/adTone.ts decides
+  // when). The grounds, panels, surfaces and their inks come from the tone; the brand keeps the
+  // accent, the button, the badge and the emphasis - each walked until it reads on the tone's grounds.
+  if (tone && _h2hsl(tone) && String(tone).toLowerCase() !== String(hex).toLowerCase()) {
+    const B = deriveBrandPalette(hex, hex2), T = deriveBrandPalette(tone)
+    const bh = _h2hsl(hex) || _h2hsl('#b07a4f'), H = bh[0], S = bh[1], Lb = bh[2]
+    const walk = (ss, ll, grounds, step) => {
+      let L = ll, c = _hsl2hex(H, ss, L)
+      for (let i = 0; i < 60 && grounds.some(g => _contrast(c, g) < 4.5) && L > 2 && L < 98; i++) { L += step; c = _hsl2hex(H, ss, L) }
+      return grounds.every(g => _contrast(c, g) >= 4.5) ? c : ''
+    }
+    const darkGround = _contrast(T['on-ground'], '#ffffff') < _contrast(T['on-ground'], '#000000')
+    const em = darkGround ? walk(Math.min(S,85), Math.max(Lb,60), [T.ground], 2) : walk(Math.min(S,72), Math.min(Lb,42), [T.ground], -2)
+    return {
+      ...T,
+      'accent': B.accent, 'on-accent': B['on-accent'],
+      'accent-fill': B['accent-fill'], 'on-accent-fill': B['on-accent-fill'],
+      'em-on-ground': em || T['em-on-ground'],
+      'accent-text': walk(Math.min(S,72), Math.min(Lb,42), [T.surface, T.panel], -2) || T['accent-text'],
+      'accent-on-dark': walk(Math.min(S,85), Math.max(Lb,64), [T['surface-dark']], 2) || T['accent-on-dark'],
+    }
+  }
   const hsl=_h2hsl(hex)||_h2hsl('#b07a4f'); const h=hsl[0], s=hsl[1], l=hsl[2];
   const accent = _hsl2hex(h,s,l);
   // CHARTER §1.8 (2026-09-07 ad-look audit): on-accent text is the higher-contrast of a warm

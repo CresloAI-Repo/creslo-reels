@@ -18,6 +18,11 @@
 #   GitHub -> repo -> Settings -> Secrets and variables -> Actions -> New repository secret
 #     REMOTION_AWS_ACCESS_KEY_ID       (same value Railway uses)
 #     REMOTION_AWS_SECRET_ACCESS_KEY   (same value Railway uses)
+#     FRONTEND_READ_TOKEN              (added 7 Oct 2026, October audit RL-02: a fine-grained
+#                                      GitHub token that can READ creslo-frontend and nothing
+#                                      else - Contents: Read-only. The tests compare the reel and
+#                                      advert code here with the app's copies, and fail if they
+#                                      cannot see the app. Renew it before it expires.)
 #   Nothing else. Region and site name are not secret and are set below.
 #
 # AFTER IT RUNS: the site URL it prints must match REMOTION_SERVE_URL in the Railway
@@ -47,6 +52,16 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      # The app's code, read-only, so the mirror tests have something to compare against.
+      # Without it they used to SKIP and pass - the deploy checked nothing (October audit RL-02).
+      - name: Check out the app (read-only, for the mirror tests)
+        uses: actions/checkout@v4
+        with:
+          repository: CresloAI-Repo/creslo-frontend
+          token: ${{ secrets.FRONTEND_READ_TOKEN }}
+          path: _creslo-frontend
+          persist-credentials: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -55,8 +70,12 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Caption readability audit (blocks the deploy on failure)
-        run: node src/test/ink.test.js
+      # npm test = the caption readability audit, the advert mirror and the reel mirror.
+      # Any one failing blocks the deploy.
+      - name: Tests (block the deploy on failure)
+        env:
+          CRESLO_FRONTEND_DIR: _creslo-frontend
+        run: npm test
 
       - name: Deploy site to Lambda
         env:

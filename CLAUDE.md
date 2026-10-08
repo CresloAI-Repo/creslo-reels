@@ -16,6 +16,16 @@ byte-identical with creslo-frontend/src/remotion/* (the live preview). Every com
 change requires a Lambda site redeploy to affect customer renders:
 `npx remotion lambda sites create src/index.ts --site-name=creslo-reels`
 
+**Checked, not just asked (October audit RL-01/RL-02, 7 Oct 2026).** The app's preview had drifted:
+the hook played beat 1's clip instead of its own, the preview ran about a second long (black at the
+end - the cut overlaps were not taken off), and an unknown caption style showed as Pop. `npm test`
+now runs `src/test/reel-mirror.test.js`, which fails if `lib/types.ts` (from "Frames each
+cross-scene transition overlaps" to the end) or ReelVideo's caption-style fallback differs from the
+app's copy. Change one, copy it to the other in the same sitting.
+The GitHub deploy checks the app out read-only (secret `FRONTEND_READ_TOKEN`) and runs `npm test`;
+on GitHub a missing app is a FAIL, never a skip. On your computer the app must sit beside this
+folder (C:\dev\creslo-frontend), or set `CRESLO_FRONTEND_DIR`.
+
 ## Moving adverts mirror (3 Oct 2026)
 `src/lib/ad/` (adStudioEngine.ts, brandFonts.ts, adMotion.ts) are byte-identical copies of
 creslo-frontend/src/lib. `AdMotion.tsx` builds the advert from them out of PLAIN DATA only - never

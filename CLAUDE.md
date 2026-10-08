@@ -22,6 +22,8 @@ end - the cut overlaps were not taken off), and an unknown caption style showed 
 now runs `src/test/reel-mirror.test.js`, which fails if `lib/types.ts` (from "Frames each
 cross-scene transition overlaps" to the end) or ReelVideo's caption-style fallback differs from the
 app's copy. Change one, copy it to the other in the same sitting.
+Since the October reels audit R1 (8 Oct 2026) it also compares the MUSIC MIX block in ReelVideo.tsx and the
+`const SAFE` line (the caption safe area, the apps' own buttons kept clear) in Captions.tsx / the app's ReelVideo.tsx.
 The GitHub deploy checks the app out read-only (secret `FRONTEND_READ_TOKEN`) and runs `npm test`;
 on GitHub a missing app is a FAIL, never a skip. On your computer the app must sit beside this
 folder (C:\dev\creslo-frontend), or set `CRESLO_FRONTEND_DIR`.

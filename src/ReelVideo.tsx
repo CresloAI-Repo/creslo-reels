@@ -118,6 +118,37 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
     return { start: Math.round(b.s * fps) - beatStarts[i], end: Math.round(b.e * fps) - beatStarts[i] }
   }
 
+  // ---- MUSIC MIX (October reels audit R1, 8 Oct 2026) ----
+  // The bed used to sit at one level from the first frame to the last: never lower under the
+  // voice, no fade in, cut dead on the last frame, and quiet when there was no voice (a music-only
+  // reel measured -24.8 LUFS). reel.music.volume (default 0.25) is now the level UNDER SPEECH;
+  // between lines, and through a reel with no voiceover, the music comes up to 2.4x that (at most
+  // 0.8), easing over 8 frames either side of each spoken line. 0.4 s fade in, 1 s fade out.
+  // MUST stay identical in both copies (the mirror test compares this block).
+  const totalFrames = useVideoConfig().durationInFrames
+  const underVoice = (reel.music && typeof reel.music.volume === 'number') ? Math.max(0, Math.min(1, reel.music.volume)) : 0.25
+  // Between spoken lines the music lifts about 7.6 dB; with no voice at all it plays near full, so a
+  // music-only reel lands near -14 LUFS with the mastered library (measured 8 Oct 2026: -17.5 at 0.6).
+  const openVol = reel.voiceoverUrl ? Math.min(0.8, underVoice * 2.4) : Math.min(0.9, underVoice * 3.6)
+  const spans: [number, number][] = (vt || [])
+    .filter((b): b is { s: number; e: number } => !!b && Number.isFinite(b.s) && Number.isFinite(b.e) && b.e > b.s)
+    .map((b) => [Math.round(b.s * fps), Math.round(b.e * fps)])
+  const musicVolume = (f: number): number => {
+    let v = openVol
+    if (reel.voiceoverUrl) {
+      if (!spans.length) v = underVoice
+      else {
+        let d = Infinity
+        for (const [s, e] of spans) { if (f >= s && f <= e) { d = 0; break } d = Math.min(d, f < s ? s - f : f - e) }
+        v = underVoice + (openVol - underVoice) * Math.min(1, d / 8)
+      }
+    }
+    const fadeIn = Math.min(1, f / Math.max(1, Math.round(fps * 0.4)))
+    const fadeOut = Math.min(1, Math.max(0, totalFrames - 1 - f) / fps)
+    return Math.max(0, v * Math.min(fadeIn, fadeOut))
+  }
+  // ---- end MUSIC MIX ----
+
   // Build an alternating Sequence / Transition list for a smooth cut between beats.
   const children: React.ReactNode[] = []
   beats.forEach((b, i) => {
@@ -181,8 +212,8 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
         )
       }) : null}
       {/* Audio (Studio v2 slice 5): background music bed + optional narration track,
-          mixed into the render. Music ducks to 25% by default so voiceover reads. */}
-      {reel.music && reel.music.url ? <Audio src={reel.music.url} volume={typeof reel.music.volume === 'number' ? reel.music.volume : 0.25} /> : null}
+          mixed into the render. The music level follows musicVolume (MUSIC MIX above). */}
+      {reel.music && reel.music.url ? <Audio src={reel.music.url} volume={musicVolume} /> : null}
       {reel.voiceoverUrl ? <Audio src={reel.voiceoverUrl} /> : null}
 
       {/* The burnt-in progress bar came out here on 2026-09-23 (Daniel). It was drawn INTO the

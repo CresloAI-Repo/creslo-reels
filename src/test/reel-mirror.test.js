@@ -9,7 +9,8 @@
 // It compares, after turning Windows line endings into plain ones:
 //   1. lib/types.ts from "Frames each cross-scene transition overlaps" to the end - the cut
 //      overlap, the beat list and the length - with the same part of the app's reelTypes.ts;
-//   2. the caption-style fallback in ReelVideo.tsx with the app's ReelVideo.tsx.
+//   2. the caption-style fallback in ReelVideo.tsx with the app's ReelVideo.tsx;
+//   3. the music mix and the caption safe area (8 Oct 2026).
 //
 // Usage:  node src/test/reel-mirror.test.js      (exit 0 = pass, 1 = fail)
 // The app's folder: CRESLO_FRONTEND_DIR if set, else creslo-frontend beside this folder.
@@ -55,6 +56,16 @@ const fallback = (s) => {
 same('caption-style fallback (ReelVideo.tsx)',
   fallback(read(path.join(__dirname, '..', 'ReelVideo.tsx'))),
   fallback(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx'))));
+
+// 3. The music mix and the caption safe area (October reels audit R1, 8 Oct 2026).
+const block = (s, a, b) => { const i = s.indexOf(a), j = s.indexOf(b); return i < 0 || j < 0 ? null : s.slice(i, j); };
+same('music mix (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '// ---- MUSIC MIX', '// ---- end MUSIC MIX'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// ---- MUSIC MIX', '// ---- end MUSIC MIX'));
+const safe = (s) => { const m = s.match(/^const SAFE = .*$/m); return m ? m[0] : null; };
+same('caption safe area (Captions.tsx / ReelVideo.tsx)',
+  safe(read(path.join(__dirname, '..', 'components', 'Captions.tsx'))),
+  safe(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx'))));
 
 console.log(fail ? `\n${fail} reel mirror part(s) out of step. Do not deploy.` : '\nThe reel mirror matches.');
 process.exit(fail ? 1 : 0);

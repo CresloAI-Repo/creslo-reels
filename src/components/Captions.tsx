@@ -127,6 +127,13 @@ const normWord = (w: string) => w.toLowerCase().replace(/[^a-z0-9]/g, '')
 // system serif. MUST stay byte-identical to the frontend mirror src/remotion/ReelVideo.tsx.
 const fam = (f: string) => `'${f}', 'Arial', sans-serif`
 
+// THE APPS' OWN BUTTONS AND TEXT (October reels audit R1, 8 Oct 2026). Instagram, TikTok and
+// Shorts draw the username, caption, sound and the like/comment/share column over the bottom third
+// and down the right; the top bar sits over the top ~14%. Meta's Reels guidance: keep the top 14%
+// and the bottom 35% clear (and about 6% each side). Captions were anchored 10% from the top and
+// 15% from the bottom - under both. Every caption now sits between these lines. MUST stay
+// byte-identical in both copies.
+const SAFE = { top: '15%', bottom: '35%', side: 0.12 }
 export const Captions: React.FC<{
   text: string
   accent: string
@@ -167,9 +174,9 @@ export const Captions: React.FC<{
       <div style={{
         position: 'absolute', left: 0, right: 0,
         // Subject-aware zone (least-important band) overrides the legacy anchors.
-        top: zone === 'top' ? '12%' : zone === 'middle' ? '40%' : (!zone && isHook) ? '40%' : undefined,
-        bottom: zone === 'bottom' ? '16%' : (!zone && !isHook) ? '16%' : undefined,
-        padding: `0 ${width * 0.08}px`, textAlign: 'left',
+        top: zone === 'top' ? SAFE.top : zone === 'middle' ? '40%' : (!zone && isHook) ? '40%' : undefined,
+        bottom: zone === 'bottom' ? SAFE.bottom : (!zone && !isHook) ? SAFE.bottom : undefined,
+        padding: `0 ${width * SAFE.side}px`, textAlign: 'left',
         fontFamily: fam(cfg.font), fontWeight: cfg.weight, fontSize, lineHeight: 1.2, color: cfg.textColor,
         WebkitTextStroke: cfg.stroke ? `${Math.max(1, fontSize * 0.01)}px rgba(0,0,0,0.85)` : undefined,
         paintOrder: 'stroke',
@@ -190,9 +197,9 @@ export const Captions: React.FC<{
       <div style={{
         position: 'absolute', left: 0, right: 0,
         // Subject-aware zone: the band flips to wherever the clip's subject ISN'T.
-        top: zone === 'top' ? '12%' : zone === 'middle' ? '42%' : undefined,
-        bottom: (zone === 'top' || zone === 'middle') ? undefined : '14%',
-        display: 'flex', justifyContent: 'center', padding: `0 ${width * 0.06}px`,
+        top: zone === 'top' ? SAFE.top : zone === 'middle' ? '42%' : undefined,
+        bottom: (zone === 'top' || zone === 'middle') ? undefined : SAFE.bottom,
+        display: 'flex', justifyContent: 'center', padding: `0 ${width * SAFE.side}px`,
         opacity: appear, transform: `translateY(${interpolate(appear, [0, 1], [16, 0])}px)`,
       }}>
         <div style={{
@@ -222,14 +229,14 @@ export const Captions: React.FC<{
   const wrap: React.CSSProperties = {
     position: 'absolute', left: 0, right: 0,
     // Subject-aware zone (least-important band) overrides the legacy anchors.
-    top: zone === 'top' ? '10%' : zone === 'middle' ? '38%' : (!zone && isHook) ? '38%' : undefined,
-    bottom: zone === 'bottom' ? '15%' : (!zone && !isHook) ? '15%' : undefined,
+    top: zone === 'top' ? SAFE.top : zone === 'middle' ? '38%' : (!zone && isHook) ? '38%' : undefined,
+    bottom: zone === 'bottom' ? SAFE.bottom : (!zone && !isHook) ? SAFE.bottom : undefined,
     display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'center',
     // Column gap is generous (0.44em) so two ADJACENT highlighted words never visually merge.
     // The active-word pop (scale 1.08, below) is a CSS transform that bulges each glyph box ~4%
     // into this gap without reserving layout space; a tighter gap let same-colour neighbours
     // (e.g. "fresh cut") run together and read as one word ("FRESHCUT"). Row gap stays tight.
-    gap: `${fontSize * 0.12}px ${fontSize * 0.44}px`, padding: `0 ${width * 0.08}px`, textAlign: 'center',
+    gap: `${fontSize * 0.12}px ${fontSize * 0.44}px`, padding: `0 ${width * SAFE.side}px`, textAlign: 'center',
   }
   // ---- Centre fade: the whole caption fades in as a block (no per-word spring). Used by
   // Editorial Soft (reveal 'fade' on the centre path); keeps the body/display font pairing. ----

@@ -482,7 +482,10 @@ export const Beat: React.FC<{
   const [clipFailed, setClipFailed] = React.useState(false)
 
   // Quick fade-in for a clean cut into each beat.
-  const opacity = interpolate(frame, [0, 5], [0, 1], { extrapolateRight: 'clamp' })
+  // The FIRST beat opens on a picture, not a fade from black: the fade made frame 0 of every reel
+  // black - the worst first frame for a hook, and the one a platform may take as the cover
+  // (October reels audit R1, 8 Oct 2026).
+  const opacity = index === 0 ? 1 : interpolate(frame, [0, 5], [0, 1], { extrapolateRight: 'clamp' })
   // Slow Ken Burns push; alternate direction per beat for variety. Intensity from reel.kenBurns
   // (absent -> 1 = current default; enabled:false or 0 -> static; >1 -> more dramatic).
   const dir = index % 2 === 0 ? 1 : -1

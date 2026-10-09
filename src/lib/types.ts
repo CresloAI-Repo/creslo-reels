@@ -25,6 +25,9 @@ export type ReelScene = {
   // Per-beat field STYLE (the storyboard edit popup): keyed FieldStage treatment
   // (silk/espresso/bokeh/horizon/embers/aurora/rays/paper/spot). Absent = mesh.
   field_style?: string | null
+  // The clip's colour and exposure evening (backend lib/clipTone, reels premium pass P2): channel
+  // gains r/g/b and an exposure gain x, applied as one colour matrix before the reel's grade.
+  tone?: { r: number; g: number; b: number; x: number } | null
 }
 
 // Single source of truth for caption-style keys. The union AND the render-side
@@ -53,7 +56,7 @@ export type StyleConfig = {
 }
 
 export type ReelData = {
-  hook?: { on_screen?: string; voiceover?: string; clip_url?: string | null; poster?: string | null; emphasis?: number[] } | null
+  hook?: { on_screen?: string; voiceover?: string; clip_url?: string | null; poster?: string | null; emphasis?: number[]; tone?: { r: number; g: number; b: number; x: number } | null } | null
   scenes?: ReelScene[]
   caption?: string
   hashtags?: string[]
@@ -77,7 +80,9 @@ export type ReelData = {
   // of the voiceover track, one entry per composition beat (hook first), null where a
   // beat has no spoken line. Captions pace their word reveals across the real span.
   // Absent -> the fixed per-word stagger (current behaviour).
-  voiceoverTiming?: { beats?: ({ s: number; e: number } | null)[] } | null
+  // Since the premium pass P1 (8 Oct 2026) a beat may also carry its spoken words with times
+  // (seconds on the voice track), which footage beats show as the caption, word by word.
+  voiceoverTiming?: { beats?: ({ s: number; e: number; words?: { t: string; s: number; e: number }[] } | null)[] } | null
   captionStyle?: CaptionStyle
   captionConfig?: Partial<Record<CaptionStyle, Partial<StyleConfig>>>
   hookSeconds?: number
@@ -90,6 +95,9 @@ export type ReelData = {
   header?: { text?: string; enabled?: boolean } | null
   grade?: string | null
   kenBurns?: { enabled?: boolean; intensity?: number } | null
+  // The brand's headline font (Brand page, the same choice Ad Studio uses), for the hook, text
+  // cards and the end card. Absent -> the caption style's own font (reels premium pass P2).
+  headFont?: { family: string; weight: number } | null
 }
 
 export const FPS = 30
@@ -114,6 +122,7 @@ export type Beat = {
   fieldTone?: 'light' | 'rich' | 'deep'
   fieldColor?: string | null
   fieldStyle?: string | null
+  tone?: { r: number; g: number; b: number; x: number } | null
 }
 
 export function buildBeats(reel: ReelData): Beat[] {
@@ -128,9 +137,13 @@ export function buildBeats(reel: ReelData): Beat[] {
       // The hook uses its OWN clip when the backend supplies one, so it never
       // repeats beat 1's footage. Falls back to scene 1 only if none was set.
       clipUrl: (hook && hook.clip_url) ? hook.clip_url : (scenes[0] ? scenes[0].clip_url : null),
+      // The hook's own still (its clip's poster, or the business's own photo) when the clip cannot
+      // play - it opened on a bare brand gradient before (reels premium pass P1, 8 Oct 2026).
+      poster: (hook && hook.poster) ? hook.poster : (scenes[0] ? scenes[0].poster || null : null),
       seconds: Math.max(1.5, Math.min(5, Number(reel.hookSeconds) || 2.5)),
       emphasis: (hook && hook.emphasis) || [],
       zone: (hook && (hook as { caption_zone?: CaptionZone }).caption_zone) || (scenes[0] ? scenes[0].caption_zone : undefined),
+      tone: (hook && hook.tone) ? hook.tone : (!(hook && hook.clip_url) && scenes[0] ? scenes[0].tone || null : null),
     })
   }
   for (const s of scenes) {
@@ -146,6 +159,7 @@ export function buildBeats(reel: ReelData): Beat[] {
       fieldTone: (s.field_tone === 'light' || s.field_tone === 'rich' || s.field_tone === 'deep') ? s.field_tone : undefined,
       fieldColor: (typeof s.field_color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(s.field_color)) ? s.field_color : undefined,
       fieldStyle: (typeof s.field_style === 'string' && /^[a-z]{3,12}$/.test(s.field_style)) ? s.field_style : undefined,
+      tone: s.tone || null,
     })
   }
   if (!beats.length) beats.push({ text: '', isHook: true, clipUrl: null, seconds: 3, emphasis: [] })

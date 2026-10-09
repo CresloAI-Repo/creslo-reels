@@ -25,20 +25,22 @@ const WhipPanCut: React.FC<CutProps<{ dir: 1 | -1 }>> = ({ children, presentatio
   const x = presentationDirection === 'entering' ? (1 - p) * 100 * dir : -p * 100 * dir
   return <AbsoluteFill style={{ transform: `translateX(${x}%)`, filter: `blur(${blur}px)` }}>{children}</AbsoluteFill>
 }
-const PunchInCut: React.FC<CutProps<{ strength: number }>> = ({ children, presentationDirection, presentationProgress, passedProps }) => {
-  const strength = passedProps.strength
-  const p = outCubic(presentationProgress)
-  if (presentationDirection === 'exiting') {
-    return <AbsoluteFill style={{ opacity: 1 - p, transform: `scale(${1 + 0.05 * p})` }}>{children}</AbsoluteFill>
-  }
-  return <AbsoluteFill style={{ transform: `scale(${1 + strength * (1 - p)})`, filter: `brightness(${1 + 0.16 * (1 - p)})` }}>{children}</AbsoluteFill>
+// A plain cut (reels premium pass P2, 8 Oct 2026): the outgoing shot holds for half the overlap
+// and the next one replaces it outright. Pro editors cut hard by default; an effect on every cut
+// is what makes an edit read as a template. Same overlap as the other cuts, so the timeline and
+// every timing worked out from it are unchanged. MUST stay identical in both copies.
+const HardCut: React.FC<CutProps<Record<string, never>>> = ({ children, presentationDirection, presentationProgress }) => {
+  const show = presentationDirection === 'entering' ? presentationProgress >= 0.5 : presentationProgress < 0.5
+  return <AbsoluteFill style={{ opacity: show ? 1 : 0 }}>{children}</AbsoluteFill>
 }
-const LumaDriftCut: React.FC<CutProps<Record<string, never>>> = ({ children, presentationDirection, presentationProgress }) => {
+// A dissolve and nothing else (reels premium pass P2b, 8 Oct 2026; Daniel: "the jumpy zoom
+// transitions"). It used to scale both shots by 3-3.5% as they crossed, and a punch cut snapped 8-14%
+// with a flash. Now the outgoing shot holds and the next one fades in over it, eased, so there is no
+// zoom and no dip towards black. MUST stay identical in both copies.
+const DissolveCut: React.FC<CutProps<Record<string, never>>> = ({ children, presentationDirection, presentationProgress }) => {
+  if (presentationDirection === 'exiting') return <AbsoluteFill>{children}</AbsoluteFill>
   const p = presentationProgress
-  if (presentationDirection === 'exiting') {
-    return <AbsoluteFill style={{ opacity: 1 - p, transform: `scale(${1 + 0.03 * p})` }}>{children}</AbsoluteFill>
-  }
-  return <AbsoluteFill style={{ opacity: p, transform: `scale(${1.035 - 0.035 * p})` }}>{children}</AbsoluteFill>
+  return <AbsoluteFill style={{ opacity: p * p * (3 - 2 * p) }}>{children}</AbsoluteFill>
 }
 
 export const ReelVideo: React.FC<ReelData> = (reel) => {
@@ -57,36 +59,26 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
     ? (reel.captionStyle as CaptionStyle)
     : FALLBACK_STYLES[seed % FALLBACK_STYLES.length]
 
-  // ---- Reels v3 cut engine (2026-09-21, Daniel: premium cuts, "no AI slop") ----
-  // The stock fade/slide/wipe set is gone. Cuts are UGC-native: whip pans with motion
-  // blur, punch-in zoom snaps, and a drifting luma dissolve. Each CUT picks its own
-  // presentation from the mood's family (ordered so consecutive cuts never repeat -
-  // variety guard), seeded from the reel's copy so preview and render always agree,
-  // and the landing cut into the final beat is always a punch. Legacy mood-preset
-  // keys map onto the new families so existing reels upgrade automatically.
+  // ---- Cut engine (Reels v3, 21 Sep 2026; reels premium passes P2 and P2b, 8 Oct 2026) ----
+  // Plain cuts, ONE signature move mid-reel (a motion-blurred whip for a kinetic reel, a dissolve
+  // for a soft one) and a dissolve into the end card. No cut zooms (Daniel: "the jumpy zoom
+  // transitions"). Seeded from the reel's copy so preview and render always agree; the legacy
+  // preset keys still choose the mood, so older reels keep theirs.
   // MUST stay identical to the mirror (creslo-frontend/src/remotion/ReelVideo.tsx).
   // The three cut presentations are defined ONCE at module scope (see CUT PRESENTATIONS above
   // ReelVideo). Building them in here made a new component type on every frame, which made
   // React remount the whole scene - clip <video> included - many times a second in the
-  // browser preview. whipPan / punchIn / lumaDrift below only choose the props.
+  // browser preview. whipPan / dissolve / hardCut below only choose the props.
   const whipPan = (dir: 1 | -1): CutPresentation => ({ component: WhipPanCut as any, props: { dir } })
-  const punchIn = (strength = 0.14): CutPresentation => ({ component: PunchInCut as any, props: { strength } })
-  const lumaDrift = (): CutPresentation => ({ component: LumaDriftCut as any, props: {} })
-  // Families are ordered so the +3 step below never lands the same cut twice running.
+  const dissolve = (): CutPresentation => ({ component: DissolveCut as any, props: {} })
+  const hardCut = (): CutPresentation => ({ component: HardCut as any, props: {} })
   // Each cut carries its KIND so the SFX layer knows what sound rides under it.
-  type Cut = { kind: 'whip' | 'punch' | 'drift'; p: CutPresentation }
-  const KINETIC: Cut[] = [{ kind: 'whip', p: whipPan(1) }, { kind: 'punch', p: punchIn() }, { kind: 'whip', p: whipPan(-1) }, { kind: 'drift', p: lumaDrift() }]
-  const SOFT: Cut[] = [{ kind: 'drift', p: lumaDrift() }, { kind: 'punch', p: punchIn(0.08) }, { kind: 'drift', p: lumaDrift() }, { kind: 'punch', p: punchIn(0.06) }]
-  const CUT_FAMILIES: Record<string, Cut[]> = {
-    kinetic: KINETIC,
-    soft: SOFT,
-    // Legacy keys -> upgraded equivalents (reels saved with old presets get new cuts).
-    'fade': SOFT,
-    'slide-from-right': KINETIC,
-    'slide-from-bottom': KINETIC,
-    'wipe-from-right': KINETIC,
-  }
-  const family = (reel.transition && CUT_FAMILIES[reel.transition]) || (seed % 2 === 0 ? KINETIC : SOFT)
+  type Cut = { kind: 'whip' | 'drift' | 'hard'; p: CutPresentation }
+  // The reel's mood: kinetic (its one move is a whip) or soft (a dissolve). The storyboard's own
+  // pick wins, legacy preset keys included; otherwise it comes from the reel's copy.
+  const moodKey = String(reel.transition || '')
+  const kinetic = ['kinetic', 'slide-from-right', 'slide-from-bottom', 'wipe-from-right'].includes(moodKey) ? true
+    : ['soft', 'fade'].includes(moodKey) ? false : seed % 2 === 0
 
   // Cut bookkeeping (phase 4 SFX): transition i starts where sequence i begins,
   // i.e. cumulative frames minus the overlaps. Selected ONCE here so the visual
@@ -99,7 +91,15 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
     beats.forEach((b, i) => {
       if (i > 0) {
         s -= TRANSITION_FRAMES
-        const cut: Cut = i === beats.length - 1 ? { kind: 'punch', p: punchIn(0.12) } : family[(seed + i * 3) % family.length]
+        // CUTS (reels premium pass P2, 8 Oct 2026): plain cuts by default, ONE signature move at the
+        // middle of the reel (a motion-blurred whip with its whoosh for the kinetic moods, a soft
+        // dissolve for the calm ones), and the end card comes in on a dissolve (P2b). Before,
+        // every cut was an effect.
+        const mid = Math.max(1, Math.round((beats.length - 1) / 2))
+        let cut: Cut
+        if (i === beats.length - 1 && beats[i].beatType === 'cta') cut = { kind: 'drift', p: dissolve() }
+        else if (i === mid && beats.length >= 4) cut = kinetic ? { kind: 'whip', p: whipPan(seed % 2 === 0 ? 1 : -1) } : { kind: 'drift', p: dissolve() }
+        else cut = { kind: 'hard', p: hardCut() }
         cuts.push({ at: s, cut })
       }
       beatStarts.push(s)
@@ -116,6 +116,23 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
     const b = vt && vt[i]
     if (!b || !Number.isFinite(b.s) || !Number.isFinite(b.e) || b.e <= b.s) return undefined
     return { start: Math.round(b.s * fps) - beatStarts[i], end: Math.round(b.e * fps) - beatStarts[i] }
+  }
+  // Spoken captions (reels premium pass P1, 8 Oct 2026): the beat's words with times, converted
+  // from seconds on the voice track to frames local to the beat. Only when the voice is in the mix.
+  const spokenFor = (i: number): { t: string; s: number; e: number }[] | undefined => {
+    const b = vt && vt[i]
+    if (!b || !Array.isArray(b.words) || !b.words.length) return undefined
+    return b.words.filter((w) => w && typeof w.t === 'string' && Number.isFinite(w.s) && Number.isFinite(w.e))
+      .map((w) => ({ t: w.t, s: Math.round(w.s * fps) - beatStarts[i], e: Math.round(w.e * fps) - beatStarts[i] }))
+  }
+  // The look, per beat (reels premium pass P2, 8 Oct 2026). A text card sits on the next shot's
+  // still (else the last one's); the end card on the shot before it. (The punch-in a beat went in
+  // P2b: a 10% zoom in four frames read as a jump.)
+  const stillFor = (i: number): string | null => {
+    const at = (j: number) => (beats[j] && beats[j].poster) || null
+    if (beats[i].beatType === 'text') { for (let j = i + 1; j < beats.length; j++) if (at(j)) return at(j); for (let j = i - 1; j >= 0; j--) if (at(j)) return at(j); return null }
+    if (beats[i].beatType === 'cta') { for (let j = i - 1; j >= 0; j--) if (at(j)) return at(j); return null }
+    return null
   }
 
   // ---- MUSIC MIX (October reels audit R1, 8 Oct 2026) ----
@@ -186,6 +203,10 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
           kenBurns={reel.kenBurns}
           grade={reel.grade}
           speech={speechFor(i)}
+          spoken={spokenFor(i)}
+          tone={b.tone}
+          still={stillFor(i)}
+          headFont={reel.headFont}
         />
       </TransitionSeries.Sequence>
     )
@@ -195,14 +216,14 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       <TransitionSeries>{children}</TransitionSeries>
-      {/* SFX on cuts (Reels v3 phase 4): whoosh under whips, a soft hit under punches,
-          a riser into the final beat; dissolves stay silent. Fail-open by design —
+      {/* SFX on cuts (Reels v3 phase 4): whoosh under whips (the punch hit has
+          had no cut to ride since P2b), a riser into the final beat; dissolves stay silent. Fail-open by design —
           without reel.sfxBase (env-gated server-side) no sound is referenced, so a
           render can never 404 on an asset that hasn't been generated yet.
           MUST stay identical to the mirror. */}
       {reel.sfxBase ? cuts.map((c, n) => {
         const final = n === cuts.length - 1
-        const file = final ? 'sfx-riser.mp3' : c.cut.kind === 'whip' ? 'sfx-whoosh.mp3' : c.cut.kind === 'punch' ? 'sfx-punch.mp3' : null
+        const file = final ? 'sfx-riser.mp3' : c.cut.kind === 'whip' ? 'sfx-whoosh.mp3' : null
         if (!file) return null
         const from = Math.max(0, final ? c.at - Math.round(fps * 0.8) : c.at - 2)
         return (

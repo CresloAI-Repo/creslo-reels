@@ -10,7 +10,9 @@
 //   1. lib/types.ts from "Frames each cross-scene transition overlaps" to the end - the cut
 //      overlap, the beat list and the length - with the same part of the app's reelTypes.ts;
 //   2. the caption-style fallback in ReelVideo.tsx with the app's ReelVideo.tsx;
-//   3. the music mix and the caption safe area (8 Oct 2026).
+//   3. the music mix and the caption safe area (8 Oct 2026);
+//   4. the spoken captions and each beat's spoken words (reels premium pass P1, 8 Oct 2026);
+//   5. the look: tone, film finish, still grounds and the cut rules (P2, 8 Oct 2026; no zooms since P2b).
 //
 // Usage:  node src/test/reel-mirror.test.js      (exit 0 = pass, 1 = fail)
 // The app's folder: CRESLO_FRONTEND_DIR if set, else creslo-frontend beside this folder.
@@ -66,6 +68,38 @@ const safe = (s) => { const m = s.match(/^const SAFE = .*$/m); return m ? m[0] :
 same('caption safe area (Captions.tsx / ReelVideo.tsx)',
   safe(read(path.join(__dirname, '..', 'components', 'Captions.tsx'))),
   safe(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx'))));
+
+// 4. Spoken captions and the spoken words per beat (reels premium pass P1, 8 Oct 2026).
+same('spoken captions (Captions.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Captions.tsx')), '// ===== SPOKEN CAPTIONS', '// ===== END SPOKEN CAPTIONS'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// ===== SPOKEN CAPTIONS', '// ===== END SPOKEN CAPTIONS'));
+same('spoken words per beat (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  // Spoken captions (reels premium pass P1, 8 Oct 2026): the beat', '\n  // ---- MUSIC MIX'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  // Spoken captions (reels premium pass P1, 8 Oct 2026): the beat', '\n  // ---- MUSIC MIX'));
+
+// 5. The look: tone, film finish, still grounds, and the cut rules (reels premium pass P2; P2b took the zooms out).
+same('the look (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '// ===== THE LOOK', '// ===== END THE LOOK'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// ===== THE LOOK', '// ===== END THE LOOK'));
+same('plain cut (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '// A plain cut (reels premium pass P2', '// A dissolve and nothing else'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// A plain cut (reels premium pass P2', '// A dissolve and nothing else'));
+same('dissolve, no zoom (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '// A dissolve and nothing else', 'export const ReelVideo'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// A dissolve and nothing else', 'export const ReelVideo'));
+same('the reel\'s mood and its cuts (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  const whipPan = (dir', '  const seqFrames'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  const whipPan = (dir', '  const seqFrames'));
+same('which cut goes where (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '        // CUTS (reels premium pass P2', '        cuts.push({ at: s, cut })'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '        // CUTS (reels premium pass P2', '        cuts.push({ at: s, cut })'));
+same('still per beat (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  // The look, per beat (reels premium pass P2', '\n  // ---- MUSIC MIX'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  // The look, per beat (reels premium pass P2', '\n  // ---- MUSIC MIX'));
+
+same('text pocket behind the words (Beat.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '      {/* TEXT POCKET (P2)', '\n      <FilmFinish frame={frame} />'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '      {/* TEXT POCKET (P2)', '\n      <FilmFinish frame={frame} />'));
 
 console.log(fail ? `\n${fail} reel mirror part(s) out of step. Do not deploy.` : '\nThe reel mirror matches.');
 process.exit(fail ? 1 : 0);

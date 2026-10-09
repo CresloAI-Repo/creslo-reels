@@ -28,6 +28,7 @@ import { loadFont as loadIBMPlexSans } from '@remotion/google-fonts/IBMPlexSans'
 import { loadFont as loadOutfit } from '@remotion/google-fonts/Outfit'
 import { loadFont as loadSora } from '@remotion/google-fonts/Sora'
 import { loadFont as loadLora } from '@remotion/google-fonts/Lora'
+import { loadFont as loadNunito } from '@remotion/google-fonts/Nunito'
 import { TRANSITION_FRAMES, type CaptionStyle, type StyleConfig } from '../lib/types'
 
 // ===== FONT_REGISTRY: the browsable font library (v2 slice 4). =====
@@ -53,6 +54,8 @@ export const FONT_REGISTRY: FontEntry[] = [
   { name: 'Abril Fatface', role: 'display', fontFamily: 'Abril Fatface', load: () => loadAbrilFatface('normal', { weights: ['400'], subsets: ['latin'] }) },
   { name: 'Cormorant Garamond', role: 'display', fontFamily: 'Cormorant Garamond', load: () => loadCormorantGaramond('normal', { weights: ['400', '600', '700'], subsets: ['latin'] }) },
   { name: 'Unbounded', role: 'display', fontFamily: 'Unbounded', load: () => loadUnbounded('normal', { weights: ['400', '700'], subsets: ['latin'] }) },
+  // Nunito: the Brand page's "Friendly rounded" headline font (lib/brandFonts), used by reels since P2.
+  { name: 'Nunito', role: 'display', fontFamily: 'Nunito', load: () => loadNunito('normal', { weights: ['400', '800'], subsets: ['latin'] }) },
   // --- Body ---
   { name: 'Inter', role: 'body', fontFamily: 'Inter', load: () => loadInter('normal', { weights: ['400', '600', '800'], subsets: ['latin'] }) },
   { name: 'DM Sans', role: 'body', fontFamily: 'DM Sans', load: () => loadDMSans('normal', { weights: ['400', '600', '700'], subsets: ['latin'] }) },
@@ -158,7 +161,6 @@ export const Captions: React.FC<{
   const cfg: StyleConfig = { ...(STYLE_CONFIG[style] || STYLE_CONFIG.pop), ...(captionConfig?.[style] || {}) }
   // Lazily load ONLY this reel's two chosen fonts (body + optional display) - flat render cost.
   ensureFont(cfg.font)
-  ensureFont(cfg.fontSecondary)
   const dec = cfg.accent === 'brand' ? accent : cfg.accent
 
   // Finish the reveal/highlight BEFORE the cross-scene transition starts, then hold.
@@ -213,7 +215,11 @@ export const Captions: React.FC<{
   }
 
   // ---- Word-map styles (wordSpring): pop, karaoke, clean, bold_box, big_subtitle, highlighter ----
-  const fontSize = Math.round((isHook ? width * 0.092 : width * 0.068) * cfg.sizeMul)
+  // On-screen lines a little larger than before (0.068 of the width read small on a phone in a reel
+  // with no voice, where these lines carry the story) and never lighter than bold: a 600 weight read
+  // thin over footage (P2). Fonts that come in one weight keep it (ONE_WEIGHT, spoken captions).
+  const fontSize = Math.round((isHook ? width * 0.092 : width * 0.076) * cfg.sizeMul)
+  if (!ONE_WEIGHT.has(cfg.font)) cfg.weight = Math.max(700, cfg.weight)
   // Which word(s) to emphasise. Prefer the generation's keyword indices (bound-checked, so a
   // stale index from a post-generation on_screen edit is dropped); else keep the time-sweep but
   // over CONTENT words only, so it never lands on filler ("of/the/a/is").
@@ -236,7 +242,11 @@ export const Captions: React.FC<{
     // The active-word pop (scale 1.08, below) is a CSS transform that bulges each glyph box ~4%
     // into this gap without reserving layout space; a tighter gap let same-colour neighbours
     // (e.g. "fresh cut") run together and read as one word ("FRESHCUT"). Row gap stays tight.
-    gap: `${fontSize * 0.12}px ${fontSize * 0.44}px`, padding: `0 ${width * SAFE.side}px`, textAlign: 'center',
+    // ONE FONT, NORMAL SPACING (reels premium pass P2, 8 Oct 2026): the keyword used to switch to a
+    // second (serif) font, and words sat 0.44em apart so two coloured words never merged - "two
+    // fonts and wide gaps in one line" in the audit. The keyword now sits on a brand-colour block
+    // (as the spoken captions do), so the gap can be a normal one.
+    gap: `${fontSize * 0.12}px ${fontSize * 0.28}px`, padding: `0 ${width * SAFE.side}px`, textAlign: 'center',
   }
   // ---- Centre fade: the whole caption fades in as a block (no per-word spring). Used by
   // Editorial Soft (reveal 'fade' on the centre path); keeps the body/display font pairing. ----
@@ -246,7 +256,7 @@ export const Captions: React.FC<{
       <div style={{ ...wrap, opacity: appear }}>
         {words.map((w, i) => (
           <span key={i} style={{
-            display: 'inline-block', fontFamily: fam((cfg.fontSecondary && emph.has(i)) ? cfg.fontSecondary : cfg.font),
+            display: 'inline-block', fontFamily: fam(cfg.font),
             fontWeight: cfg.weight, fontSize, lineHeight: 1.04,
             letterSpacing: isHook ? '-0.01em' : '0.005em', textTransform: cfg.uppercase ? 'uppercase' : 'none',
             color: cfg.textColor,
@@ -284,7 +294,7 @@ export const Captions: React.FC<{
         const stretchX = isActive && cfg.activeFx === 'stretch' ? interpolate(enter, [0, 1], [0.52, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 1
         // Font pairing: the emphasised (keyword) word uses the display font; the rest use the body font.
         const ws: React.CSSProperties = {
-          display: 'inline-block', fontFamily: fam((cfg.fontSecondary && emph.has(i)) ? cfg.fontSecondary : cfg.font), fontWeight: cfg.weight, fontSize, lineHeight: 1.04,
+          display: 'inline-block', fontFamily: fam(cfg.font), fontWeight: cfg.weight, fontSize, lineHeight: 1.04,
           letterSpacing: isHook ? '-0.01em' : '0.005em', textTransform: cfg.uppercase ? 'uppercase' : 'none',
           color: cfg.textColor, opacity: enter,
           transform: `translateY(${translateY}px) scale(${grow * pop}) scaleX(${stretchX})`,
@@ -299,8 +309,9 @@ export const Captions: React.FC<{
           ws.padding = `0 ${fontSize * 0.14}px`
           ws.borderRadius = `${fontSize * 0.22}px`
         }
-        if (isActive && (cfg.activeFx === 'color' || cfg.activeFx === 'stretch')) ws.color = dec
-        if (isActive && cfg.activeFx === 'box') {
+        // The keyword sits on a block of the brand colour (P2): a brand-coloured WORD sank into
+        // mid-tone footage. Same signature as the spoken captions.
+        if (isActive && (cfg.activeFx === 'box' || cfg.activeFx === 'color' || cfg.activeFx === 'stretch')) {
           ws.background = dec
           ws.color = idealText(dec)
           ws.padding = `0 ${fontSize * 0.16}px`
@@ -331,3 +342,107 @@ export const Captions: React.FC<{
     </div>
   )
 }
+
+// ===== SPOKEN CAPTIONS (reels premium pass P1, 8 Oct 2026) =====
+// Daniel, 8 Oct: the reels look "too basic, not like a finished product". The captions showed the
+// planner's on-screen headline, not what the voice says, and moved between the top and middle.
+// Now, when a beat has spoken words with times (backend lib/voiceAlign), the caption is the words
+// being said: two or three at a time, the word being spoken lit in the brand colour, always in the
+// same place - just above the apps' own buttons (SPOKEN_BOTTOM), centred. One font: the style's own
+// (never the emphasis serif). Words come in as a group with a short pop; a group stays until the
+// next group starts, or leaves soon after its last word when the voice pauses.
+// MUST stay byte-identical to the frontend mirror src/remotion/ReelVideo.tsx (the reel mirror test
+// compares from "SPOKEN CAPTIONS" to "END SPOKEN CAPTIONS").
+export type SpokenWord = { t: string; s: number; e: number }   // frames, local to the beat
+const SPOKEN_BOTTOM = '36%'
+// A group closes at three words, after punctuation, or before it would pass 16 letters.
+export function spokenGroups(words: SpokenWord[]): SpokenWord[][] {
+  const groups: SpokenWord[][] = []
+  let cur: SpokenWord[] = []
+  let len = 0
+  for (const w of words) {
+    const t = String(w.t || '').trim()
+    if (!t) continue
+    if (cur.length && (cur.length >= 3 || len + t.length > 16)) { groups.push(cur); cur = []; len = 0 }
+    cur.push({ ...w, t })
+    len += t.length + (cur.length > 1 ? 1 : 0)
+    if (/[.,!?;:…—]$/.test(t)) { groups.push(cur); cur = []; len = 0 }
+  }
+  if (cur.length) groups.push(cur)
+  return groups
+}
+// Fonts that come in one weight only: asking them for bold makes the browser fake it.
+const ONE_WEIGHT = new Set(['Anton', 'Bebas Neue', 'Archivo Black', 'Abril Fatface', 'DM Serif Display'])
+export const SpokenCaptions: React.FC<{
+  words: SpokenWord[]
+  accent: string
+  style?: CaptionStyle
+  captionConfig?: Partial<Record<CaptionStyle, Partial<StyleConfig>>>
+}> = ({ words, accent, style = 'pop', captionConfig }) => {
+  const frame = useCurrentFrame()
+  const { fps, width } = useVideoConfig()
+  const cfg: StyleConfig = { ...(STYLE_CONFIG[style] || STYLE_CONFIG.pop), ...(captionConfig?.[style] || {}) }
+  ensureFont(cfg.font)
+  const groups = spokenGroups(words || [])
+  if (!groups.length) return null
+  // The group on screen: the last one that has started (2 frames early, so the eye is there as
+  // the word lands), unless the voice has paused for a while after it.
+  let gi = -1
+  for (let i = 0; i < groups.length; i++) if (frame >= groups[i][0].s - 2) gi = i
+  if (gi < 0) return null
+  const g = groups[gi]
+  const last = g[g.length - 1]
+  const nextStart = gi + 1 < groups.length ? groups[gi + 1][0].s - 2 : Infinity
+  if (frame > Math.min(nextStart, last.e + 12)) return null
+  const lit = cfg.accent === 'brand' ? accent : cfg.accent
+  const boxFill = /^#[0-9a-fA-F]{6}$/.test(lit) ? lit : '#b07a4f'
+  // Big and heavy enough to read at a glance on a phone: about 97 px on a 1080-wide reel, and never
+  // lighter than bold (a 600 weight read thin over busy footage in the first test render).
+  const fontSize = Math.round(width * 0.09 * cfg.sizeMul)
+  const weight = ONE_WEIGHT.has(cfg.font) ? cfg.weight : Math.max(700, cfg.weight)
+  // ONE word is lit at a time: the latest word that has started (a word's window overlapping the
+  // next lit two at once in the first test render).
+  let litIdx = -1
+  for (let i = 0; i < g.length; i++) if (frame >= g[i].s - 1) litIdx = i
+  if (litIdx >= 0 && frame > g[litIdx].e + 6 && litIdx === g.length - 1) litIdx = -1
+  const enter = spring({ frame: frame - (g[0].s - 2), fps, config: { damping: 16, mass: 0.5, stiffness: 220 } })
+  return (
+    <div style={{
+      position: 'absolute', left: 0, right: 0, bottom: SPOKEN_BOTTOM,
+      display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-end',
+      // Every word carries the box's padding (see below), so lighting a word never shifts the line.
+      gap: `${fontSize * 0.06}px ${fontSize * 0.04}px`, padding: `0 ${width * 0.08}px`, textAlign: 'center',
+      opacity: enter, transform: `translateY(${(1 - enter) * fontSize * 0.25}px) scale(${0.88 + 0.12 * enter})`,
+    }}>
+      {g.map((w, i) => {
+        const on = i === litIdx
+        const said = i < litIdx
+        const ws: React.CSSProperties = {
+          display: 'inline-block', fontFamily: fam(cfg.font), fontWeight: weight, fontSize, lineHeight: 1.02,
+          letterSpacing: '-0.005em', textTransform: cfg.uppercase ? 'uppercase' : 'none',
+          color: cfg.textColor,
+          transform: `scale(${on ? 1.04 : 1})`,
+          WebkitTextStroke: cfg.stroke ? `${Math.max(3, fontSize * 0.07)}px rgba(0,0,0,0.92)` : undefined,
+          paintOrder: 'stroke',
+          textShadow: '0 4px 16px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.6)',
+          opacity: on || said || cfg.activeFx === 'highlight' ? 1 : 0.92,
+          padding: `0 ${fontSize * 0.14}px`, borderRadius: `${fontSize * 0.12}px`,
+        }
+        // The lit word sits on a block of the brand colour (Hormozi / CapCut "box" captions). A
+        // coloured WORD was tried first: lifted until it read on footage, a brown brand turned
+        // beige - too close to cream text to tell which word was being said (second test render).
+        if (cfg.activeFx !== 'highlight' && on) {
+          ws.background = boxFill
+          ws.color = idealText(boxFill)
+          ws.WebkitTextStroke = undefined
+        }
+        if (cfg.activeFx === 'highlight') {
+          ws.background = hexA(lit, on ? 1 : 0.82)
+          ws.WebkitTextStroke = undefined
+        }
+        return <span key={i} style={ws}>{w.t}</span>
+      })}
+    </div>
+  )
+}
+// ===== END SPOKEN CAPTIONS =====

@@ -28,6 +28,12 @@ The GitHub deploy checks the app out read-only (secret `FRONTEND_READ_TOKEN`) an
 on GitHub a missing app is a FAIL, never a skip. On your computer the app must sit beside this
 folder (C:\dev\creslo-frontend), or set `CRESLO_FRONTEND_DIR`.
 
+Since the reels premium passes (8 Oct 2026, project doc `claude/reels-premium-audit-2026-10-08.md`) it also compares
+SPOKEN CAPTIONS (Captions.tsx), THE LOOK (Beat.tsx: tone, film finish, still ground), the TEXT POCKET behind the words,
+the plain cut, the dissolve, the reel's mood and which cut goes where, and the still per beat (ReelVideo.tsx).
+No cut and no beat zooms since P2b (Daniel: "the jumpy zoom transitions") - keep it that way unless he asks. Every one of these
+needs the Lambda site redeployed before customer renders change.
+
 ## Moving adverts mirror (3 Oct 2026)
 `src/lib/ad/` (adStudioEngine.ts, brandFonts.ts, adMotion.ts) are byte-identical copies of
 creslo-frontend/src/lib. `AdMotion.tsx` builds the advert from them out of PLAIN DATA only - never

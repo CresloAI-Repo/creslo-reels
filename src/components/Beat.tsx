@@ -1,7 +1,7 @@
 import React from 'react'
 import { AbsoluteFill, OffthreadVideo, Img, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion'
 import { loadFont as loadWordmarkSerif } from '@remotion/google-fonts/DMSerifDisplay'
-import { Captions } from './Captions'
+import { Captions, SpokenCaptions, type SpokenWord } from './Captions'
 import type { CaptionStyle, StyleConfig } from '../lib/types'
 
 // The wordmark serif — the same face as Creslo's own "Creslo." brand mark. Every
@@ -37,13 +37,58 @@ function idealText(hex: string) {
 
 // CSS colour grades applied over the clip layer (driven by reel.grade). Absent -> no filter.
 // MUST stay byte-identical to the frontend mirror src/remotion/ReelVideo.tsx.
+// P2 (8 Oct 2026): gentler, so the grade unifies rather than shouts; clips are evened out first.
 const GRADE_PRESETS: Record<string, string> = {
-  warm: 'sepia(0.15) brightness(1.05) saturate(1.1)',
-  punchy: 'contrast(1.1) saturate(1.2)',
-  editorial: 'contrast(1.05) saturate(0.9) brightness(1.02)',
-  clean: 'brightness(1.03) saturate(1.05)',
+  warm: 'sepia(0.1) saturate(1.06) contrast(1.04)',
+  punchy: 'contrast(1.08) saturate(1.12)',
+  editorial: 'contrast(1.06) saturate(0.88) brightness(1.01)',
+  clean: 'contrast(1.03) saturate(1.04)',
   neutral: 'none',
 }
+
+// ===== THE LOOK (reels premium pass P2, 8 Oct 2026) =====
+// Daniel, 8 Oct: the reels look "too basic, not like a finished product... maybe the transitions or
+// the treatments". The audit (claude/reels-premium-audit-2026-10-08.md) found every clip a
+// different film, a blurred blob behind the text card, a 2.7 s logo-on-a-glow ending, and an effect
+// on every cut. These are the shared parts of the fix. MUST stay byte-identical to the frontend
+// mirror src/remotion/ReelVideo.tsx (the reel mirror test compares from "THE LOOK" to "END THE LOOK").
+export type Tone = { r: number; g: number; b: number; x: number }
+// One clip's colour and exposure evening (backend lib/clipTone) as a colour matrix, applied before
+// the reel's grade, so stock clips shot in different light read as one film.
+export const ToneFilter: React.FC<{ id: string; tone?: Tone | null }> = ({ id, tone }) => {
+  if (!tone) return null
+  const m = (v: number) => (Math.round(v * 1000) / 1000).toString()
+  return (
+    <svg width={0} height={0} style={{ position: 'absolute' }} aria-hidden>
+      <filter id={id} colorInterpolationFilters="sRGB">
+        <feColorMatrix type="matrix" values={`${m(tone.r * tone.x)} 0 0 0 0 0 ${m(tone.g * tone.x)} 0 0 0 0 0 ${m(tone.b * tone.x)} 0 0 0 0 0 1 0`} />
+      </filter>
+    </svg>
+  )
+}
+// A fine moving film grain and a soft vignette over every beat: the glue that makes stock clips,
+// photos and cards sit together.
+export const FilmFinish: React.FC<{ frame: number }> = ({ frame }) => (
+  <>
+    <AbsoluteFill style={{ backgroundImage: GRAIN_URI, backgroundSize: '160px 160px', backgroundPosition: `${(frame * 37) % 160}px ${(frame * 61) % 160}px`, opacity: 0.08, mixBlendMode: 'overlay', pointerEvents: 'none' }} />
+    <AbsoluteFill style={{ background: 'radial-gradient(125% 90% at 50% 45%, transparent 58%, rgba(0,0,0,0.26) 100%)', pointerEvents: 'none' }} />
+  </>
+)
+// The ground behind a text card or the end card: a still from the reel itself, softened and
+// darkened under a wash of the brand colour - or the brand colour alone when there is none.
+// (The old ground was a drifting field of blurred blobs, grids and particles.)
+export const StillGround: React.FC<{ src?: string | null; accent: string; frame: number; durationInFrames: number; dim?: number; tint?: number }> = ({ src, accent, frame, durationInFrames, dim = 0.5, tint = 0.22 }) => {
+  const t = frame / Math.max(1, durationInFrames)
+  if (!src) return <AbsoluteFill style={{ background: `linear-gradient(180deg, ${shade(accent, 0.05)} 0%, ${shade(accent, -0.07)} 100%)` }} />
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      <Img src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${1.1 + 0.04 * t})`, filter: `blur(9px) brightness(${dim}) saturate(0.85)` }} />
+      <AbsoluteFill style={{ background: /^#[0-9a-fA-F]{6}$/.test(accent) ? hexA(accent, tint) : 'transparent', mixBlendMode: 'multiply' }} />
+    </AbsoluteFill>
+  )
+}
+// ===== END THE LOOK =====
+
 
 
 // ===== BrandField: the premium brand-colour stage behind text/CTA beats. =====
@@ -474,7 +519,16 @@ export const Beat: React.FC<{
   // Speech-synced captions (phase 9): this beat's spoken span in frames LOCAL to the
   // beat (ReelVideo converts from track seconds). Passed through to Captions.
   speech?: { start: number; end: number }
-}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech }) => {
+  // Spoken captions (reels premium pass P1): this beat's words with times, frames local to the
+  // beat. A footage or mockup beat (not the hook) shows these instead of its on-screen line.
+  spoken?: SpokenWord[]
+  // The look (reels premium pass P2): this clip's tone, a still from the reel for a text card or
+  // the end card to sit on, and the brand's headline font.
+  tone?: Tone | null
+  still?: string | null
+  headFont?: { family: string; weight: number } | null
+}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech, spoken, tone, still, headFont }) => {
+  const saysIt = !isHook && Array.isArray(spoken) && spoken.length > 0
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   // A failed clip fetch (e.g. a Pexels CDN 503) flips this so the beat degrades to the branded
@@ -485,29 +539,79 @@ export const Beat: React.FC<{
   // The FIRST beat opens on a picture, not a fade from black: the fade made frame 0 of every reel
   // black - the worst first frame for a hook, and the one a platform may take as the cover
   // (October reels audit R1, 8 Oct 2026).
-  const opacity = index === 0 ? 1 : interpolate(frame, [0, 5], [0, 1], { extrapolateRight: 'clamp' })
+  // In 4 frames, not 5 (P2b): a plain cut shows the new beat at its 4th frame, which was still at 80%,
+  // so every cut dipped for a frame.
+  const opacity = index === 0 ? 1 : interpolate(frame, [0, 4], [0, 1], { extrapolateRight: 'clamp' })
   // Slow Ken Burns push; alternate direction per beat for variety. Intensity from reel.kenBurns
   // (absent -> 1 = current default; enabled:false or 0 -> static; >1 -> more dramatic).
   const dir = index % 2 === 0 ? 1 : -1
   const kbI = kenBurns ? (kenBurns.enabled === false ? 0 : (typeof kenBurns.intensity === 'number' ? kenBurns.intensity : 1)) : 1
   const k = Math.max(0, kbI)
-  const scale = interpolate(frame, [0, durationInFrames], [1 + 0.06 * k, 1 + 0.16 * k], { extrapolateRight: 'clamp' })
-  const panX = interpolate(frame, [0, durationInFrames], [0, 22 * dir * k], { extrapolateRight: 'clamp' })
-  // Reels v3 craft law (2026-09-21): nothing sits static past ~3.5s. Footage beats
-  // longer than that get a punch-in RESET at their midpoint - a 7-frame zoom snap
-  // with a brightness kiss that re-hooks the eye, then the Ken Burns drift carries
-  // on from the tighter framing. Deterministic; mirrors byte-identical.
-  const resetAt = durationInFrames > 3.5 * fps ? Math.round(durationInFrames / 2) : -1
-  const resetP = resetAt > 0 ? interpolate(frame, [resetAt, resetAt + 7], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 0
-  const resetScale = 1 + 0.055 * (1 - Math.pow(1 - resetP, 3))
-  const resetGlow = resetAt > 0 ? Math.sin(resetP * Math.PI) * 0.1 : 0
-  // Colour grade over the clip layer (reel.grade -> GRADE_PRESETS). Absent -> no filter.
+  // MOTION (reels premium pass P2, 8 Oct 2026): a still gets the slow Ken Burns push; a moving clip
+  // only a gentle drift (its own movement is the motion - pushing and panning it as well read as a
+  // template). Nothing else zooms: the punch-in a beat went in P2b (Daniel: "jumpy"). The
+  // move runs at one steady speed through the beat, so nothing lurches.
+  const moving = !!clipUrl && !clipFailed
+  const scale = moving
+    ? interpolate(frame, [0, durationInFrames], [1 + 0.03 * k, 1 + 0.07 * k], { extrapolateRight: 'clamp' })
+    : interpolate(frame, [0, durationInFrames], [1 + 0.06 * k, 1 + 0.16 * k], { extrapolateRight: 'clamp' })
+  const panX = moving ? 0 : interpolate(frame, [0, durationInFrames], [0, 22 * dir * k], { extrapolateRight: 'clamp' })
+  // Colour grade over the clip layer (reel.grade -> GRADE_PRESETS), after the clip's own tone.
   const gradeFilter = grade && GRADE_PRESETS[grade] ? GRADE_PRESETS[grade] : undefined
+  const toneId = `cr-tone-${index}`
+  const lookFilter = [tone ? `url(#${toneId})` : '', gradeFilter && gradeFilter !== 'none' ? gradeFilter : ''].filter(Boolean).join(' ') || undefined
+  // The brand's headline font for the hook, the text card and the end card (one font a line).
+  const styleKey: CaptionStyle = captionStyle || 'pop'
+  const headCfg: any = headFont ? { ...(captionConfig || {}), [styleKey]: { ...(((captionConfig || {}) as any)[styleKey] || {}), font: headFont.family, weight: headFont.weight } } : captionConfig
 
   // Kinetic text beat (Studio v2 slice 1): the words ARE the scene. A slowly drifting
   // brand-colour field (alternating polarity per beat for rhythm) with the caption
   // rendered at hook scale. Footage and caption zones don't apply here.
   // MUST stay byte-identical to the frontend mirror src/remotion/ReelVideo.tsx.
+  // TEXT CARD (P2): the words over a softened still from the reel (or the plain brand colour), in
+  // the headline font. The storyboard's own field styles (fieldStyle) keep the old stage below.
+  if (beatType === 'text' && !fieldStyle) {
+    const fx = (fieldColor && /^#[0-9a-fA-F]{3,8}$/.test(fieldColor)) ? fieldColor : accent
+    const ink = still ? '#FFFFFF' : idealText(fx)
+    const cardCfg: any = { ...(headCfg || {}), [styleKey]: { ...(((headCfg || {}) as any)[styleKey] || {}), textColor: ink } }
+    return (
+      <AbsoluteFill style={{ opacity }}>
+        <StillGround src={still} accent={fx} frame={frame} durationInFrames={durationInFrames} />
+        <div style={{ position: 'absolute', inset: 0, transform: `scale(${1 + (frame / Math.max(1, durationInFrames)) * 0.03})` }}>
+          <Captions text={text} accent={still ? fx : ink} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cardCfg} emphasis={emphasis} speech={speech} />
+        </div>
+        <FilmFinish frame={frame} />
+      </AbsoluteFill>
+    )
+  }
+  // END CARD (P2): the call to action over the reel's last shot, softened under the brand colour,
+  // with the logo above and the name below - quick in, nothing floating, no light rays. The old
+  // card was 2.7 s of logo on a glow, 18% of the 8 Oct reel.
+  if (beatType === 'cta' && !fieldStyle) {
+    const fx = (fieldColor && /^#[0-9a-fA-F]{3,8}$/.test(fieldColor)) ? fieldColor : accent
+    const inS = spring({ frame: frame - 1, fps, config: { damping: 18, mass: 0.6, stiffness: 170 } })
+    const nameS = spring({ frame: frame - 7, fps, config: { damping: 18, mass: 0.6, stiffness: 150 } })
+    const name = String(brandName || '').trim()
+    const ctaCfg: any = { ...(headCfg || {}), [styleKey]: { ...(((headCfg || {}) as any)[styleKey] || {}), textColor: '#FFFFFF' } }
+    return (
+      <AbsoluteFill style={{ opacity }}>
+        <StillGround src={still} accent={fx} frame={frame} durationInFrames={durationInFrames} dim={0.42} tint={0.3} />
+        {brandLogo ? (
+          // The logo as uploaded - its own shape, never cropped into a tile or recoloured.
+          <Img src={brandLogo} style={{ position: 'absolute', left: '50%', top: '20%', width: 150, height: 150, marginLeft: -75, objectFit: 'contain', opacity: inS, transform: `translateY(${(1 - inS) * 24}px) scale(${0.86 + 0.14 * inS})`, filter: 'drop-shadow(0 14px 30px rgba(0,0,0,.45))' }} />
+        ) : null}
+        <Captions text={text} accent={fx} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={ctaCfg} emphasis={emphasis} speech={speech} />
+        <div style={{ position: 'absolute', left: 0, right: 0, top: '60%', display: 'flex', justifyContent: 'center', opacity: nameS, transform: `translateY(${(1 - nameS) * 18}px)` }}>
+          {brandWordmark ? (
+            <Img src={brandWordmark} style={{ maxWidth: 420, maxHeight: 96, objectFit: 'contain', filter: 'drop-shadow(0 8px 24px rgba(0,0,0,.35))' }} />
+          ) : name ? (
+            <div style={{ fontFamily: WORDMARK_FONT, fontWeight: 400, fontSize: Math.min(64, Math.max(40, Math.round(760 / Math.max(8, name.length)))), color: '#FFFFFF', textShadow: '0 6px 24px rgba(0,0,0,.4)', whiteSpace: 'nowrap' }}>{name}</div>
+          ) : null}
+        </div>
+        <FilmFinish frame={frame} />
+      </AbsoluteFill>
+    )
+  }
   if (beatType === 'text') {
     // Field tone: the reel-level look (mood preset / planner choice) wins; without one,
     // beats alternate rich/deep as before. Type colour tracks the tone - deep brand
@@ -569,7 +673,9 @@ export const Beat: React.FC<{
             <div style={{ position: 'absolute', top: 18, left: '50%', transform: 'translateX(-50%)', width: '26%', height: 22, borderRadius: 100, background: '#141210' }} />
           </div>
         </AbsoluteFill>
-        <Captions text={text} accent={accent} isHook={false} style={captionStyle} durationInFrames={durationInFrames} captionConfig={captionConfig} emphasis={emphasis} speech={speech} />
+        {saysIt
+          ? <SpokenCaptions words={spoken!} accent={accent} style={captionStyle} captionConfig={captionConfig} />
+          : <Captions text={text} accent={accent} isHook={false} style={captionStyle} durationInFrames={durationInFrames} captionConfig={captionConfig} emphasis={emphasis} speech={speech} />}
       </AbsoluteFill>
     )
   }
@@ -640,7 +746,8 @@ export const Beat: React.FC<{
   }
   return (
     <AbsoluteFill style={{ opacity, backgroundColor: '#000' }}>
-      <AbsoluteFill style={{ transform: `scale(${scale * resetScale}) translateX(${panX}px)`, filter: [gradeFilter, resetGlow > 0.001 ? `brightness(${1 + resetGlow})` : ''].filter(Boolean).join(' ') || undefined }}>
+      <ToneFilter id={toneId} tone={tone} />
+      <AbsoluteFill style={{ transform: `scale(${scale}) translateX(${panX}px)`, filter: lookFilter }}>
         {clipUrl && !clipFailed ? (
           <OffthreadVideo src={clipUrl} muted onError={() => setClipFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : poster ? (
@@ -667,7 +774,12 @@ export const Beat: React.FC<{
         }}
       />
 
-      <Captions text={text} accent={accent} isHook={isHook} style={captionStyle} durationInFrames={durationInFrames} captionConfig={captionConfig} emphasis={emphasis} zone={zone} speech={speech} />
+      {/* TEXT POCKET (P2): a soft shade behind the words, where they sit - cream words on a mid-grey wall measured about 3:1 in the test render (readability law: words on a contrasting ground). */}
+      <AbsoluteFill style={{ background: `radial-gradient(ellipse 78% 15% at 50% ${saysIt ? 61 : zone === 'top' ? 19 : (zone === 'middle' || (!zone && isHook)) ? 43 : 61}%, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.24) 55%, rgba(0,0,0,0) 100%)` }} />
+      <FilmFinish frame={frame} />
+      {saysIt
+        ? <SpokenCaptions words={spoken!} accent={accent} style={captionStyle} captionConfig={captionConfig} />
+        : <Captions text={text} accent={accent} isHook={isHook} style={captionStyle} durationInFrames={durationInFrames} captionConfig={isHook ? headCfg : captionConfig} emphasis={emphasis} zone={zone} speech={speech} />}
     </AbsoluteFill>
   )
 }

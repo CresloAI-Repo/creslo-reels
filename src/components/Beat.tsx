@@ -525,9 +525,10 @@ export const Beat: React.FC<{
   // The look (reels premium pass P2): this clip's tone, a still from the reel for a text card or
   // the end card to sit on, and the brand's headline font.
   tone?: Tone | null
+  clipStart?: number
   still?: string | null
   headFont?: { family: string; weight: number } | null
-}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech, spoken, tone, still, headFont }) => {
+}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech, spoken, tone, still, headFont, clipStart }) => {
   const saysIt = !isHook && Array.isArray(spoken) && spoken.length > 0
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
@@ -749,7 +750,8 @@ export const Beat: React.FC<{
       <ToneFilter id={toneId} tone={tone} />
       <AbsoluteFill style={{ transform: `scale(${scale}) translateX(${panX}px)`, filter: lookFilter }}>
         {clipUrl && !clipFailed ? (
-          <OffthreadVideo src={clipUrl} muted onError={() => setClipFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          // Starts a moment in when the backend chose a start point (P3: past the camera settling).
+          <OffthreadVideo src={clipUrl} muted trimBefore={clipStart ? Math.round(clipStart * fps) : undefined} onError={() => setClipFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : poster ? (
           // PHOTO BEAT (phase 11 intake lanes): a real still — the business's own menu,
           // product or room — under the same Ken Burns drift the clips get (the parent

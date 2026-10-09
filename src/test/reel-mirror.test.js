@@ -84,6 +84,9 @@ same('the look (Beat.tsx / ReelVideo.tsx)',
 same('plain cut (ReelVideo.tsx)',
   block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '// A plain cut (reels premium pass P2', '// A dissolve and nothing else'),
   block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// A plain cut (reels premium pass P2', '// A dissolve and nothing else'));
+same('each clip starts at its chosen point (Beat.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '          // Starts a moment in when the backend chose', "objectFit: 'cover' }} />\n        ) : poster"),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '          // Starts a moment in when the backend chose', "objectFit: 'cover' }} />\n        ) : poster"));
 same('dissolve, no zoom (ReelVideo.tsx)',
   block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '// A dissolve and nothing else', 'export const ReelVideo'),
   block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// A dissolve and nothing else', 'export const ReelVideo'));

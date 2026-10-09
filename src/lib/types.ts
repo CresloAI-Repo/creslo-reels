@@ -28,6 +28,8 @@ export type ReelScene = {
   // The clip's colour and exposure evening (backend lib/clipTone, reels premium pass P2): channel
   // gains r/g/b and an exposure gain x, applied as one colour matrix before the reel's grade.
   tone?: { r: number; g: number; b: number; x: number } | null
+  // Where the clip starts, in seconds (reels premium pass P3): a moment in, past the camera settling.
+  clip_start?: number
 }
 
 // Single source of truth for caption-style keys. The union AND the render-side
@@ -56,7 +58,7 @@ export type StyleConfig = {
 }
 
 export type ReelData = {
-  hook?: { on_screen?: string; voiceover?: string; clip_url?: string | null; poster?: string | null; emphasis?: number[]; tone?: { r: number; g: number; b: number; x: number } | null } | null
+  hook?: { on_screen?: string; voiceover?: string; clip_url?: string | null; poster?: string | null; emphasis?: number[]; tone?: { r: number; g: number; b: number; x: number } | null; clip_start?: number } | null
   scenes?: ReelScene[]
   caption?: string
   hashtags?: string[]
@@ -123,7 +125,12 @@ export type Beat = {
   fieldColor?: string | null
   fieldStyle?: string | null
   tone?: { r: number; g: number; b: number; x: number } | null
+  // Seconds into the clip where the beat starts (P3); 0 = the clip's first frame.
+  clipStart?: number
 }
+
+// A clip start in seconds, checked: 0 to 3, else 0 (P3).
+const startAt = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 && n <= 3 ? n : 0 }
 
 export function buildBeats(reel: ReelData): Beat[] {
   const scenes = Array.isArray(reel.scenes) ? reel.scenes : []
@@ -144,6 +151,7 @@ export function buildBeats(reel: ReelData): Beat[] {
       emphasis: (hook && hook.emphasis) || [],
       zone: (hook && (hook as { caption_zone?: CaptionZone }).caption_zone) || (scenes[0] ? scenes[0].caption_zone : undefined),
       tone: (hook && hook.tone) ? hook.tone : (!(hook && hook.clip_url) && scenes[0] ? scenes[0].tone || null : null),
+      clipStart: (hook && hook.clip_url) ? startAt(hook.clip_start) : (scenes[0] ? startAt(scenes[0].clip_start) : 0),
     })
   }
   for (const s of scenes) {
@@ -160,6 +168,7 @@ export function buildBeats(reel: ReelData): Beat[] {
       fieldColor: (typeof s.field_color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(s.field_color)) ? s.field_color : undefined,
       fieldStyle: (typeof s.field_style === 'string' && /^[a-z]{3,12}$/.test(s.field_style)) ? s.field_style : undefined,
       tone: s.tone || null,
+      clipStart: startAt(s.clip_start),
     })
   }
   if (!beats.length) beats.push({ text: '', isHook: true, clipUrl: null, seconds: 3, emphasis: [] })

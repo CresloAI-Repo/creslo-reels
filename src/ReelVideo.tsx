@@ -205,6 +205,7 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
           speech={speechFor(i)}
           spoken={spokenFor(i)}
           tone={b.tone}
+          clipStart={b.clipStart}
           still={stillFor(i)}
           headFont={reel.headFont}
         />

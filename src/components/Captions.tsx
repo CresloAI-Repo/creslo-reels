@@ -395,7 +395,7 @@ export const SpokenCaptions: React.FC<{
   const nextStart = gi + 1 < groups.length ? groups[gi + 1][0].s - 2 : Infinity
   if (frame > Math.min(nextStart, last.e + 12)) return null
   const lit = cfg.accent === 'brand' ? accent : cfg.accent
-  const boxFill = /^#[0-9a-fA-F]{6}$/.test(lit) ? lit : '#b07a4f'
+  const boxFill = /^#[0-9a-fA-F]{6}$/.test(lit) ? lit : '#9d6a40'
   // Big and heavy enough to read at a glance on a phone: about 97 px on a 1080-wide reel, and never
   // lighter than bold (a 600 weight read thin over busy footage in the first test render).
   const fontSize = Math.round(width * 0.09 * cfg.sizeMul)

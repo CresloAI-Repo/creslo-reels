@@ -96,7 +96,7 @@ export const AdMotion: React.FC<AdMotionProps> = (p) => {
 
   if (!def) return <AbsoluteFill style={{ background: '#111' }} />
   // tone: the ground taken from the photo when no brand colour belongs in it (Ad Studio lib/adTone, 5 Oct 2026)
-  const pal = deriveBrandPalette(p.accent || '#b07a4f', p.accent2 || '', /^#[0-9a-f]{6}$/i.test(p.tone || '') ? p.tone : '')
+  const pal = deriveBrandPalette(p.accent || '#9d6a40', p.accent2 || '', /^#[0-9a-f]{6}$/i.test(p.tone || '') ? p.tone : '')
   const vars: Record<string, string> = {}
   for (const k in pal) vars['--' + k] = (pal as any)[k]
   vars['--hfont'] = bf ? bf.family : def.font

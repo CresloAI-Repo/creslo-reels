@@ -11,7 +11,7 @@ const AD_CSS_RAW = `#cad{transform-origin:top left;position:absolute;top:0;left:
 
 /* ================= AD BASE ================= */
 #cad{width:1080px;--h:1080px;height:var(--h);position:relative;overflow:hidden;font-family:'DM Sans',sans-serif;box-sizing:border-box;
-  --accent:#b07a4f;--hfont:'DM Serif Display',serif;background:#0e141a}
+  --accent:#9d6a40;--hfont:'DM Serif Display',serif;background:#0e141a}
 #cad .layer{position:absolute;inset:0}
 #cad .img{background-image:var(--img);background-size:cover;background-position:var(--fx,50%) var(--fy,50%);transform:translate(var(--ox,0%),var(--oy,0%)) scale(var(--zoom,1)) rotate(var(--rot,0deg))}
 #cad .headline em{font-style:normal;color:var(--accent)}
@@ -1000,7 +1000,7 @@ function withBrandFontWeight(css) {
 }
 export const AD_CSS = withBrandFontWeight(AD_CSS_RAW)
 
-export const ACCENTS = ['#3f2e1e','#6f5d3e','#835531','#b07a4f','#c89368','#dcb48c','#e8ddcb','#fffdf8'];
+export const ACCENTS = ['#3f2e1e','#6f5d3e','#835531','#9d6a40','#c89368','#dcb48c','#e8ddcb','#fffdf8'];
 
 export const STICKER_CATS = ['Sale & badges','Arrows','Sparkle','Marks'];
 export const STICKERS = {
@@ -1564,7 +1564,7 @@ export function deriveBrandPalette(hex, hex2 = '', tone = ''){
   // accent, the button, the badge and the emphasis - each walked until it reads on the tone's grounds.
   if (tone && _h2hsl(tone) && String(tone).toLowerCase() !== String(hex).toLowerCase()) {
     const B = deriveBrandPalette(hex, hex2), T = deriveBrandPalette(tone)
-    const bh = _h2hsl(hex) || _h2hsl('#b07a4f'), H = bh[0], S = bh[1], Lb = bh[2]
+    const bh = _h2hsl(hex) || _h2hsl('#9d6a40'), H = bh[0], S = bh[1], Lb = bh[2]
     const walk = (ss, ll, grounds, step) => {
       let L = ll, c = _hsl2hex(H, ss, L)
       for (let i = 0; i < 60 && grounds.some(g => _contrast(c, g) < 4.5) && L > 2 && L < 98; i++) { L += step; c = _hsl2hex(H, ss, L) }
@@ -1581,7 +1581,7 @@ export function deriveBrandPalette(hex, hex2 = '', tone = ''){
       'accent-on-dark': walk(Math.min(S,85), Math.max(Lb,64), [T['surface-dark']], 2) || T['accent-on-dark'],
     }
   }
-  const hsl=_h2hsl(hex)||_h2hsl('#b07a4f'); const h=hsl[0], s=hsl[1], l=hsl[2];
+  const hsl=_h2hsl(hex)||_h2hsl('#9d6a40'); const h=hsl[0], s=hsl[1], l=hsl[2];
   const accent = _hsl2hex(h,s,l);
   // CHARTER §1.8 (2026-09-07 ad-look audit): on-accent text is the higher-contrast of a warm
   // near-black and a warm near-white, BOTH re-derived from the brand hue — never pure #000/#fff,

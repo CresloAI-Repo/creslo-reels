@@ -44,7 +44,7 @@ export const RemotionRoot: React.FC = () => {
         fps={AD_MOTION_FPS}
         width={1080}
         height={1080}
-        defaultProps={{ t: 'cinematic', ratio: 1080, style: 'pop', accent: '#b07a4f', copy: { name: 'Creslo', eyebrow: 'Ad Studio', headline: 'Adverts that *move*', sub: 'The same advert, brought in over six seconds.', cta: 'See it' }, site: 'creslo.ai' } as unknown as Record<string, unknown>}
+        defaultProps={{ t: 'cinematic', ratio: 1080, style: 'pop', accent: '#9d6a40', copy: { name: 'Creslo', eyebrow: 'Ad Studio', headline: 'Adverts that *move*', sub: 'The same advert, brought in over six seconds.', cta: 'See it' }, site: 'creslo.ai' } as unknown as Record<string, unknown>}
         calculateMetadata={({ props }) => ({ height: (((TREATMENTS as any)[(props as any).t] || {}).ratio) || 1080 })}
       />
     </>

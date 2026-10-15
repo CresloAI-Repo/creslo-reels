@@ -25,7 +25,7 @@ const sans = loadDMSans('normal', { weights: ['400', '600', '700'], subsets: ['l
 // Brand palette (creslo.ai)
 const CREAM = '#F5EFE0'
 const INK = '#2B2320'
-const BROWN = '#B07A4F'
+const BROWN = '#9D6A40'
 const BROWN_DEEP = '#8A5A33'
 const SURFACE = '#FFFDF7'
 

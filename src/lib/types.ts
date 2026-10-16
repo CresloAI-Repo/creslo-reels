@@ -129,8 +129,9 @@ export type Beat = {
   clipStart?: number
 }
 
-// A clip start in seconds, checked: 0 to 3, else 0 (P3).
-const startAt = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 && n <= 3 ? n : 0 }
+// A clip start in seconds, checked: 0 to 600 (P3 - a stock clip a second or so in; your own clip from
+// wherever you chose in it, 15 Oct 2026), else 0.
+const startAt = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 && n <= 600 ? n : 0 }
 
 export function buildBeats(reel: ReelData): Beat[] {
   const scenes = Array.isArray(reel.scenes) ? reel.scenes : []

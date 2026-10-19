@@ -487,6 +487,26 @@ const FieldStage: React.FC<{ styleKey?: string | null; accent: string; frame: nu
         </AbsoluteFill>
       )
     }
+    case 'rotary': { // Rotary Echo (lookbook 78, 2026-10-16): rotational parallax / cel-spin echo —
+      // nested rounded-square outlines of the hue spin at differing frame-driven rates (two reversed),
+      // reading as layered depth while staying 2D. Each ring owns ONE computed transform per frame
+      // (rotate only; size comes from inset, never scale) so nothing can flatten; a dark focus pool
+      // re-darkens the centre above the busy rings so the CTA wordmark clears the gate. Deep CTA ground.
+      const ring = (inset: string, tint: number, alpha: number, speed: number, w: number) => (
+        <div style={{ position: 'absolute', inset, border: `${w}px solid ${hexA(shade(a, tint), alpha)}`, borderRadius: '22%', transform: `rotate(${(frame * speed) % 360}deg)` }} />
+      )
+      return (
+        <AbsoluteFill>
+          <AbsoluteFill style={{ background: `radial-gradient(120% 95% at 50% 42%, ${shade(a, -0.32)}, ${shade(a, -0.58)} 64%, ${shade(a, -0.74)})` }} />
+          {ring('7%', 0.12, 0.72, 0.1, 2.5)}
+          {ring('19%', 0.3, 0.6, -0.13, 2)}
+          {ring('31%', 0.46, 0.5, 0.08, 2)}
+          {ring('43%', 0.6, 0.4, -0.16, 1.5)}
+          <AbsoluteFill style={{ background: `radial-gradient(48% 34% at 50% 50%, ${hexA(shade(a, -0.68), 0.8)}, ${hexA(shade(a, -0.68), 0.3)} 58%, transparent 74%)` }} />
+          {grain}
+        </AbsoluteFill>
+      )
+    }
     default: // 'mesh' — BrandField v3 (honours the tone)
       return <BrandField accent={a} frame={frame} tone={tone} />
   }

@@ -866,7 +866,14 @@ export const Beat: React.FC<{
       {/* ---- end SPED UP TAG */}
       {saysIt
         ? <SpokenCaptions words={spoken!} accent={accent} style={captionStyle} captionConfig={captionConfig} />
-        : <Captions text={text} accent={accent} isHook={isHook} style={captionStyle} durationInFrames={durationInFrames} captionConfig={isHook ? headCfg : captionConfig} emphasis={emphasis} zone={zone} speech={speech} />}
+        : isHook && index === 0
+          // ---- OPENING WORDS ON FRAME 0 (Daniel, 21 Oct 2026, decision 3 A): the reel's first frame is its cover in the
+          // feed and, with the loop ending, its last frame too - so the opening words are already there, fully shown, from
+          // frame 0 (held at their finished state), not popping in. Every other beat keeps its animation. MUST stay
+          // identical in both copies.
+          ? <Freeze frame={Math.max(0, durationInFrames - 1)}><Captions text={text} accent={accent} isHook={isHook} style={captionStyle} durationInFrames={durationInFrames} captionConfig={headCfg} emphasis={emphasis} zone={zone} speech={speech} /></Freeze>
+          // ---- end OPENING WORDS ON FRAME 0
+          : <Captions text={text} accent={accent} isHook={isHook} style={captionStyle} durationInFrames={durationInFrames} captionConfig={isHook ? headCfg : captionConfig} emphasis={emphasis} zone={zone} speech={speech} />}
     </AbsoluteFill>
   )
 }

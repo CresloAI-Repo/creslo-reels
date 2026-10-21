@@ -121,5 +121,10 @@ same('loop ending (ReelVideo.tsx)',
   block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '      {/* ---- LOOP ENDING', '      {/* ---- end LOOP ENDING */}'),
   block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '      {/* ---- LOOP ENDING', '      {/* ---- end LOOP ENDING */}'));
 
+// 8. The opening words already there on frame 0 (Daniel, 21 Oct 2026, decision 3 A).
+same('opening words on frame 0 (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '          // ---- OPENING WORDS ON FRAME 0', '          // ---- end OPENING WORDS ON FRAME 0'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '          // ---- OPENING WORDS ON FRAME 0', '          // ---- end OPENING WORDS ON FRAME 0'));
+
 console.log(fail ? `\n${fail} reel mirror part(s) out of step. Do not deploy.` : '\nThe reel mirror matches.');
 process.exit(fail ? 1 : 0);

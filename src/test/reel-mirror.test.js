@@ -12,7 +12,8 @@
 //   2. the caption-style fallback in ReelVideo.tsx with the app's ReelVideo.tsx;
 //   3. the music mix and the caption safe area (8 Oct 2026);
 //   4. the spoken captions and each beat's spoken words (reels premium pass P1, 8 Oct 2026);
-//   5. the look: tone, film finish, still grounds and the cut rules (P2, 8 Oct 2026; no zooms since P2b).
+//   5. the look: tone, film finish, still grounds and the cut rules (P2, 8 Oct 2026; no zooms since P2b);
+//   6. the sped-up tag (B2); 7. a character on a card (C1) and the loop ending (C2), 21 Oct 2026.
 //
 // Usage:  node src/test/reel-mirror.test.js      (exit 0 = pass, 1 = fail)
 // The app's folder: CRESLO_FRONTEND_DIR if set, else creslo-frontend beside this folder.
@@ -103,6 +104,22 @@ same('still per beat (ReelVideo.tsx)',
 same('text pocket behind the words (Beat.tsx)',
   block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '      {/* TEXT POCKET (P2)', '\n      <FilmFinish frame={frame} />'),
   block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '      {/* TEXT POCKET (P2)', '\n      <FilmFinish frame={frame} />'));
+
+// 6. Own clips sped up (reels brief B2, 21 Oct 2026): the speed and the "Sped up" tag draw the same in both.
+same('sped-up tag (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '      {/* ---- SPED UP TAG', '      {/* ---- end SPED UP TAG */}'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '      {/* ---- SPED UP TAG', '      {/* ---- end SPED UP TAG */}'));
+
+// 7. A character on a card (reels brief C1) and the loop ending (C2), 21 Oct 2026.
+same('character on a card (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '// ---- CHARACTER ON A CARD', '// ---- end CHARACTER ON A CARD'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// ---- CHARACTER ON A CARD', '// ---- end CHARACTER ON A CARD'));
+same('one beat as drawn (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  // One beat as drawn:', 'character={b.character} />'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  // One beat as drawn:', 'character={b.character} />'));
+same('loop ending (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '      {/* ---- LOOP ENDING', '      {/* ---- end LOOP ENDING */}'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '      {/* ---- LOOP ENDING', '      {/* ---- end LOOP ENDING */}'));
 
 console.log(fail ? `\n${fail} reel mirror part(s) out of step. Do not deploy.` : '\nThe reel mirror matches.');
 process.exit(fail ? 1 : 0);

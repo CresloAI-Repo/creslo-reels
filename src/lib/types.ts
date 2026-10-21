@@ -30,6 +30,11 @@ export type ReelScene = {
   tone?: { r: number; g: number; b: number; x: number } | null
   // Where the clip starts, in seconds (reels premium pass P3): a moment in, past the camera settling.
   clip_start?: number
+  // How fast the clip plays (reels brief B2, 21 Oct 2026): 1, 1.5, 2, 3 or 4. Over 1, the beat shows "Sped up".
+  speed?: number
+  // A saved character's cut-out on a text card or the end card (reels brief C1, 21 Oct 2026): a PNG with no
+  // background, drawn small in the lower-left corner of the safe area. Ignored on footage beats.
+  character_cut?: string | null
 }
 
 // Single source of truth for caption-style keys. The union AND the render-side
@@ -58,7 +63,7 @@ export type StyleConfig = {
 }
 
 export type ReelData = {
-  hook?: { on_screen?: string; voiceover?: string; clip_url?: string | null; poster?: string | null; emphasis?: number[]; tone?: { r: number; g: number; b: number; x: number } | null; clip_start?: number } | null
+  hook?: { on_screen?: string; voiceover?: string; clip_url?: string | null; poster?: string | null; emphasis?: number[]; tone?: { r: number; g: number; b: number; x: number } | null; clip_start?: number; speed?: number } | null
   scenes?: ReelScene[]
   caption?: string
   hashtags?: string[]
@@ -100,6 +105,9 @@ export type ReelData = {
   // The brand's headline font (Brand page, the same choice Ad Studio uses), for the hook, text
   // cards and the end card. Absent -> the caption style's own font (reels premium pass P2).
   headFont?: { family: string; weight: number } | null
+  // Loop ending (reels brief C2, 21 Oct 2026): the reel ends on half a second of its own opening frame, so it plays
+  // round without a jump.
+  loopEnd?: boolean
 }
 
 export const FPS = 30
@@ -127,11 +135,18 @@ export type Beat = {
   tone?: { r: number; g: number; b: number; x: number } | null
   // Seconds into the clip where the beat starts (P3); 0 = the clip's first frame.
   clipStart?: number
+  // How fast the clip plays (B2): 1 = real time. Anything over 1 shows the "Sped up" tag.
+  speed?: number
+  // A saved character's cut-out on a text card or the end card (C1).
+  character?: string | null
 }
 
 // A clip start in seconds, checked: 0 to 600 (P3 - a stock clip a second or so in; your own clip from
 // wherever you chose in it, 15 Oct 2026), else 0.
 const startAt = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 && n <= 600 ? n : 0 }
+// A clip speed, checked (reels brief B2, 21 Oct 2026): only 1.5, 2, 3 or 4 speed a clip up; anything else plays at 1.
+export const CLIP_SPEEDS = [1, 1.5, 2, 3, 4]
+const speedOf = (v: unknown): number => { const n = Number(v); return CLIP_SPEEDS.includes(n) ? n : 1 }
 
 export function buildBeats(reel: ReelData): Beat[] {
   const scenes = Array.isArray(reel.scenes) ? reel.scenes : []
@@ -153,6 +168,7 @@ export function buildBeats(reel: ReelData): Beat[] {
       zone: (hook && (hook as { caption_zone?: CaptionZone }).caption_zone) || (scenes[0] ? scenes[0].caption_zone : undefined),
       tone: (hook && hook.tone) ? hook.tone : (!(hook && hook.clip_url) && scenes[0] ? scenes[0].tone || null : null),
       clipStart: (hook && hook.clip_url) ? startAt(hook.clip_start) : (scenes[0] ? startAt(scenes[0].clip_start) : 0),
+      speed: (hook && hook.clip_url) ? speedOf(hook.speed) : (scenes[0] ? speedOf(scenes[0].speed) : 1),
     })
   }
   for (const s of scenes) {
@@ -170,11 +186,17 @@ export function buildBeats(reel: ReelData): Beat[] {
       fieldStyle: (typeof s.field_style === 'string' && /^[a-z]{3,12}$/.test(s.field_style)) ? s.field_style : undefined,
       tone: s.tone || null,
       clipStart: startAt(s.clip_start),
+      speed: speedOf(s.speed),
+      character: (s.beat_type === 'text' || s.beat_type === 'cta') && typeof s.character_cut === 'string' && /^https:\/\//i.test(s.character_cut) ? s.character_cut : null,
     })
   }
   if (!beats.length) beats.push({ text: '', isHook: true, clipUrl: null, seconds: 3, emphasis: [] })
   return beats
 }
+
+// Loop ending (C2): half a second of the reel's opening frame, held at the very end. Only on a reel of two beats or more.
+export const LOOP_FRAMES = 15
+export const loopsAtEnd = (reel: ReelData): boolean => reel.loopEnd === true && buildBeats(reel).length > 1
 
 export function totalDurationInFrames(reel: ReelData): number {
   const beats = buildBeats(reel)
@@ -182,5 +204,5 @@ export function totalDurationInFrames(reel: ReelData): number {
   // overlap each transition steals so duration matches the rendered timeline.
   const seqFrames = beats.reduce((sum, b) => sum + Math.max(1, Math.round(b.seconds * FPS)), 0)
   const transitions = Math.max(0, beats.length - 1) * TRANSITION_FRAMES
-  return Math.max(FPS, seqFrames - transitions)
+  return Math.max(FPS, seqFrames - transitions) + (loopsAtEnd(reel) ? LOOP_FRAMES : 0)
 }

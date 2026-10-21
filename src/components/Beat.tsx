@@ -1,5 +1,5 @@
 import React from 'react'
-import { AbsoluteFill, OffthreadVideo, Img, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion'
+import { AbsoluteFill, Freeze, OffthreadVideo, Img, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion'
 import { loadFont as loadWordmarkSerif } from '@remotion/google-fonts/DMSerifDisplay'
 import { Captions, SpokenCaptions, type SpokenWord } from './Captions'
 import type { CaptionStyle, StyleConfig } from '../lib/types'
@@ -512,6 +512,48 @@ const FieldStage: React.FC<{ styleKey?: string | null; accent: string; frame: nu
   }
 }
 
+// ---- CHARACTER ON A CARD (reels brief C1, 21 Oct 2026): a saved character's cut-out (its background taken off by Bria),
+// small, in the lower-left corner of the safe area - 64px in from the side, its feet on the line the apps' own captions
+// start below (35% up from the bottom) - with a soft shadow, popping up a moment after the card. It NEVER sits on the
+// words: the card's words are laid out once more, hidden and fully revealed (Freeze at the card's last frame), and the
+// character takes the biggest size up to its own that clears every word, the logo and the name by 20px - measured on
+// the layout, so it is the same size on every frame. No size from 150px up fits: no character. On a text card the words
+// start at the top of the safe area to make room. MUST stay identical in both copies.
+const CARD_CHARACTER = { text: 300, cta: 220 }
+const CHARACTER_FEET = 1248
+const CardCharacter: React.FC<{ src?: string | null; size: number; frame: number; fps: number; durationInFrames: number; avoid: React.ReactNode }> = ({ src, size, frame, fps, durationInFrames, avoid }) => {
+  const ghost = React.useRef<HTMLDivElement>(null)
+  const [fit, setFit] = React.useState<number | null>(null)
+  React.useLayoutEffect(() => {
+    const root = ghost.current
+    if (!root || !src) return
+    const boxes: { x: number; y: number; r: number; b: number }[] = []
+    root.querySelectorAll('*').forEach((n) => {
+      const el = n as HTMLElement
+      if (el.tagName !== 'IMG' && (el.children.length || !(el.textContent || '').trim())) return
+      let x = 0, y = 0, e: HTMLElement | null = el
+      while (e && e !== root) { x += e.offsetLeft; y += e.offsetTop; e = e.offsetParent as HTMLElement | null }
+      if (el.offsetWidth && el.offsetHeight) boxes.push({ x, y, r: x + el.offsetWidth, b: y + el.offsetHeight })
+    })
+    let best: number | null = null
+    for (let s = size; s >= 150; s -= 10) {
+      const c = { x: 64 - 20, y: CHARACTER_FEET - s - 20, r: 64 + s + 20, b: CHARACTER_FEET + 20 }
+      if (!boxes.some((w) => w.x < c.r && w.r > c.x && w.y < c.b && w.b > c.y)) { best = s; break }
+    }
+    if (best !== fit) setFit(best)
+  })
+  if (!src) return null
+  const s = spring({ frame: frame - 5, fps, config: { damping: 15, mass: 0.7, stiffness: 140 } })
+  return (
+    <>
+      <div ref={ghost} aria-hidden style={{ position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+        <Freeze frame={Math.max(0, durationInFrames - 1)}>{avoid}</Freeze>
+      </div>
+      {fit ? <Img src={src} style={{ position: 'absolute', left: 64, top: CHARACTER_FEET - fit, width: fit, height: fit, objectFit: 'contain', objectPosition: 'left bottom', opacity: s, transform: `translateY(${(1 - s) * 40}px)`, filter: 'drop-shadow(0 14px 24px rgba(0,0,0,.4))' }} /> : null}
+    </>
+  )
+}
+// ---- end CHARACTER ON A CARD
 export const Beat: React.FC<{
   text: string
   isHook: boolean
@@ -546,9 +588,12 @@ export const Beat: React.FC<{
   // the end card to sit on, and the brand's headline font.
   tone?: Tone | null
   clipStart?: number
+  speed?: number
   still?: string | null
   headFont?: { family: string; weight: number } | null
-}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech, spoken, tone, still, headFont, clipStart }) => {
+  // A saved character's cut-out on a text card or the end card (C1).
+  character?: string | null
+}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech, spoken, tone, still, headFont, clipStart, speed, character }) => {
   const saysIt = !isHook && Array.isArray(spoken) && spoken.length > 0
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
@@ -599,8 +644,10 @@ export const Beat: React.FC<{
       <AbsoluteFill style={{ opacity }}>
         <StillGround src={still} accent={fx} frame={frame} durationInFrames={durationInFrames} />
         <div style={{ position: 'absolute', inset: 0, transform: `scale(${1 + (frame / Math.max(1, durationInFrames)) * 0.03})` }}>
-          <Captions text={text} accent={still ? fx : ink} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cardCfg} emphasis={emphasis} speech={speech} />
+          <Captions text={text} accent={still ? fx : ink} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cardCfg} emphasis={emphasis} zone={character ? 'top' : undefined} speech={speech} />
         </div>
+        <CardCharacter src={character} size={CARD_CHARACTER.text} frame={frame} fps={fps} durationInFrames={durationInFrames}
+          avoid={<Captions text={text} accent={fx} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cardCfg} emphasis={emphasis} zone="top" speech={speech} />} />
         <FilmFinish frame={frame} />
       </AbsoluteFill>
     )
@@ -629,6 +676,14 @@ export const Beat: React.FC<{
             <div style={{ fontFamily: WORDMARK_FONT, fontWeight: 400, fontSize: Math.min(64, Math.max(40, Math.round(760 / Math.max(8, name.length)))), color: '#FFFFFF', textShadow: '0 6px 24px rgba(0,0,0,.4)', whiteSpace: 'nowrap' }}>{name}</div>
           ) : null}
         </div>
+        <CardCharacter src={character} size={CARD_CHARACTER.cta} frame={frame} fps={fps} durationInFrames={durationInFrames}
+          avoid={<>
+            <Captions text={text} accent={fx} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={ctaCfg} emphasis={emphasis} speech={speech} />
+            <div style={{ position: 'absolute', left: 0, right: 0, top: '60%', display: 'flex', justifyContent: 'center' }}>
+              {brandWordmark ? <Img src={brandWordmark} style={{ maxWidth: 420, maxHeight: 96, objectFit: 'contain' }} />
+                : name ? <div style={{ fontFamily: WORDMARK_FONT, fontWeight: 400, fontSize: Math.min(64, Math.max(40, Math.round(760 / Math.max(8, name.length)))), whiteSpace: 'nowrap' }}>{name}</div> : null}
+            </div>
+          </>} />
         <FilmFinish frame={frame} />
       </AbsoluteFill>
     )
@@ -665,8 +720,10 @@ export const Beat: React.FC<{
         <FieldStage styleKey={fieldStyle} accent={fx} frame={frame} tone={tone} />
         {/* slow push-in keeps the type alive for the whole beat */}
         <div style={{ position: 'absolute', inset: 0, transform: `scale(${1 + (frame / Math.max(1, durationInFrames)) * 0.05})` }}>
-          <Captions text={text} accent={textCol} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cfg} emphasis={emphasis} speech={speech} />
+          <Captions text={text} accent={textCol} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cfg} emphasis={emphasis} zone={character ? 'top' : undefined} speech={speech} />
         </div>
+        <CardCharacter src={character} size={CARD_CHARACTER.text} frame={frame} fps={fps} durationInFrames={durationInFrames}
+          avoid={<Captions text={text} accent={textCol} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cfg} emphasis={emphasis} zone="top" speech={speech} />} />
       </AbsoluteFill>
     )
   }
@@ -762,6 +819,8 @@ export const Beat: React.FC<{
         <div style={{ position: 'absolute', inset: 0, transform: `scale(${breathe})` }}>
           <Captions text={text} accent={fx} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={captionConfig} emphasis={emphasis} speech={speech} />
         </div>
+        <CardCharacter src={character} size={CARD_CHARACTER.cta} frame={frame} fps={fps} durationInFrames={durationInFrames}
+          avoid={<Captions text={text} accent={fx} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={captionConfig} emphasis={emphasis} speech={speech} />} />
       </AbsoluteFill>
     )
   }
@@ -771,7 +830,7 @@ export const Beat: React.FC<{
       <AbsoluteFill style={{ transform: `scale(${scale}) translateX(${panX}px)`, filter: lookFilter }}>
         {clipUrl && !clipFailed ? (
           // Starts a moment in when the backend chose a start point (P3: past the camera settling).
-          <OffthreadVideo src={clipUrl} muted trimBefore={clipStart ? Math.round(clipStart * fps) : undefined} onError={() => setClipFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <OffthreadVideo src={clipUrl} muted playbackRate={speed && speed > 1 ? speed : undefined} trimBefore={clipStart ? Math.round(clipStart * fps) : undefined} onError={() => setClipFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : poster ? (
           // PHOTO BEAT (phase 11 intake lanes): a real still — the business's own menu,
           // product or room — under the same Ken Burns drift the clips get (the parent
@@ -799,6 +858,12 @@ export const Beat: React.FC<{
       {/* TEXT POCKET (P2): a soft shade behind the words, where they sit - cream words on a mid-grey wall measured about 3:1 in the test render (readability law: words on a contrasting ground). */}
       <AbsoluteFill style={{ background: `radial-gradient(ellipse 78% 15% at 50% ${saysIt ? 61 : zone === 'top' ? 19 : (zone === 'middle' || (!zone && isHook)) ? 43 : 61}%, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.24) 55%, rgba(0,0,0,0) 100%)` }} />
       <FilmFinish frame={frame} />
+      {/* ---- SPED UP TAG (reels brief B2, 21 Oct 2026): a sped-up clip says so, so a screen is never passed off as real
+          time. Small, top left, inside the safe area (below the top 14%); lower down when the words sit at the top. */}
+      {speed && speed > 1 && clipUrl && !clipFailed ? (
+        <div style={{ position: 'absolute', left: 64, top: zone === 'top' ? 560 : 290, padding: '10px 22px', borderRadius: 100, background: 'rgba(0,0,0,0.5)', color: '#FFFFFF', fontFamily: 'Inter, "DM Sans", Arial, sans-serif', fontSize: 30, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Sped up {speed}x</div>
+      ) : null}
+      {/* ---- end SPED UP TAG */}
       {saysIt
         ? <SpokenCaptions words={spoken!} accent={accent} style={captionStyle} captionConfig={captionConfig} />
         : <Captions text={text} accent={accent} isHook={isHook} style={captionStyle} durationInFrames={durationInFrames} captionConfig={isHook ? headCfg : captionConfig} emphasis={emphasis} zone={zone} speech={speech} />}

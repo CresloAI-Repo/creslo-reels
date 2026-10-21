@@ -1,8 +1,8 @@
 import React from 'react'
-import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion'
+import { AbsoluteFill, Audio, Freeze, Sequence, useVideoConfig } from 'remotion'
 import { TransitionSeries, linearTiming, type TransitionPresentation } from '@remotion/transitions'
 import { Beat } from './components/Beat'
-import { buildBeats, TRANSITION_FRAMES, CAPTION_STYLE_KEYS, type ReelData, type CaptionStyle } from './lib/types'
+import { buildBeats, loopsAtEnd, LOOP_FRAMES, TRANSITION_FRAMES, CAPTION_STYLE_KEYS, type ReelData, type CaptionStyle } from './lib/types'
 
 // The hash-select fallback (for an absent/invalid captionStyle) is limited to the
 // original 3 styles, so the 5 newer styles only ever render when explicitly picked.
@@ -166,6 +166,11 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
   }
   // ---- end MUSIC MIX ----
 
+  // One beat as drawn: in its place on the timeline, and again for the loop ending (C2). MUST stay identical in both copies.
+  const beatEl = (b: (typeof beats)[number], i: number) => (
+    <Beat text={b.text} isHook={b.isHook} clipUrl={b.clipUrl} accent={accent} index={i} durationInFrames={seqFrames[i]} captionStyle={captionStyle} captionConfig={reel.captionConfig} emphasis={b.emphasis} zone={b.zone} beatType={b.beatType} poster={b.poster} brandName={reel.brandName} brandLogo={reel.brandLogo} brandWordmark={reel.brandWordmark} fieldTone={b.fieldTone || reel.fieldTone} fieldColor={b.fieldColor} fieldStyle={b.fieldStyle} kenBurns={reel.kenBurns} grade={reel.grade} speech={speechFor(i)} spoken={spokenFor(i)} tone={b.tone} clipStart={b.clipStart} speed={b.speed} still={stillFor(i)} headFont={reel.headFont} character={b.character} />
+  )
+
   // Build an alternating Sequence / Transition list for a smooth cut between beats.
   const children: React.ReactNode[] = []
   beats.forEach((b, i) => {
@@ -181,34 +186,7 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
     }
     children.push(
       <TransitionSeries.Sequence key={`s${i}`} durationInFrames={frames}>
-        <Beat
-          text={b.text}
-          isHook={b.isHook}
-          clipUrl={b.clipUrl}
-          accent={accent}
-          index={i}
-          durationInFrames={frames}
-          captionStyle={captionStyle}
-          captionConfig={reel.captionConfig}
-          emphasis={b.emphasis}
-          zone={b.zone}
-          beatType={b.beatType}
-          poster={b.poster}
-          brandName={reel.brandName}
-          brandLogo={reel.brandLogo}
-          brandWordmark={reel.brandWordmark}
-          fieldTone={b.fieldTone || reel.fieldTone}
-          fieldColor={b.fieldColor}
-          fieldStyle={b.fieldStyle}
-          kenBurns={reel.kenBurns}
-          grade={reel.grade}
-          speech={speechFor(i)}
-          spoken={spokenFor(i)}
-          tone={b.tone}
-          clipStart={b.clipStart}
-          still={stillFor(i)}
-          headFont={reel.headFont}
-        />
+        {beatEl(b, i)}
       </TransitionSeries.Sequence>
     )
   })
@@ -237,6 +215,15 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
           mixed into the render. The music level follows musicVolume (MUSIC MIX above). */}
       {reel.music && reel.music.url ? <Audio src={reel.music.url} volume={musicVolume} /> : null}
       {reel.voiceoverUrl ? <Audio src={reel.voiceoverUrl} /> : null}
+      {/* ---- LOOP ENDING (reels brief C2, 21 Oct 2026): the last half second is the reel's own first frame, held, so it
+          plays round without a jump. Only when the reel asks for it (loopEnd) and has two beats or more.
+          MUST stay identical in both copies. */}
+      {loopsAtEnd(reel) ? (
+        <Sequence from={totalFrames - LOOP_FRAMES} durationInFrames={LOOP_FRAMES}>
+          <Freeze frame={0}>{beatEl(beats[0], 0)}</Freeze>
+        </Sequence>
+      ) : null}
+      {/* ---- end LOOP ENDING */}
 
       {/* The burnt-in progress bar came out here on 2026-09-23 (Daniel). It was drawn INTO the
           video, so it followed the reel onto Instagram and TikTok, where no other reel has one -

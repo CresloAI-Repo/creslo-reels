@@ -10,7 +10,7 @@ export const FONTS_IMPORT_URL = 'https://fonts.googleapis.com/css2?family=DM+San
 const AD_CSS_RAW = `#cad{transform-origin:top left;position:absolute;top:0;left:0}
 
 /* ================= AD BASE ================= */
-#cad{width:1080px;--h:1080px;height:var(--h);position:relative;overflow:hidden;font-family:'DM Sans',sans-serif;box-sizing:border-box;
+#cad{width:1080px;--h:1080px;height:var(--h);position:relative;overflow:hidden;font-family:'DM Sans',sans-serif;box-sizing:border-box;font-variant-numeric:lining-nums;
   --accent:#9d6a40;--hfont:'DM Serif Display',serif;background:#0e141a}
 #cad .layer{position:absolute;inset:0}
 #cad .img{background-image:var(--img);background-size:cover;background-position:var(--fx,50%) var(--fy,50%);transform:translate(var(--ox,0%),var(--oy,0%)) scale(var(--zoom,1)) rotate(var(--rot,0deg))}

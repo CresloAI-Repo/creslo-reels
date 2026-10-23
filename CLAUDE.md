@@ -34,6 +34,11 @@ the plain cut, the dissolve, the reel's mood and which cut goes where, and the s
 No cut and no beat zooms since P2b (Daniel: "the jumpy zoom transitions") - keep it that way unless he asks. Every one of these
 needs the Lambda site redeployed before customer renders change.
 
+Since the punch look (R1, 22 Oct 2026; project doc `claude/reels-reference-2026-10-22.md`) it also compares the PUNCH LOOK block
+(Beat.tsx "// ===== PUNCH LOOK" to "// ===== END PUNCH LOOK =====", with the app's ReelVideo.tsx), the PUNCH CARDS wiring and the
+held keyword (`headingFor` in ReelVideo.tsx). The punch look is the reference reels' grammar rebuilt in our own code - never their
+assets, fonts or artwork copied. It is the default caption style for every new reel; the Lambda site must be redeployed for it.
+
 ## Moving adverts mirror (3 Oct 2026)
 `src/lib/ad/` (adStudioEngine.ts, brandFonts.ts, adMotion.ts) are byte-identical copies of
 creslo-frontend/src/lib. `AdMotion.tsx` builds the advert from them out of PLAIN DATA only - never
@@ -54,3 +59,10 @@ Design Spec are LAW for every composition and export in this repo). The short ve
    eyes are for taste verdicts, never for catching defects.
 3. Readability law: text always on a contrasting ground, never across a contrast
    boundary; angles under type <= 15 degrees; shadows must actually contrast.
+
+## Words are never cut off - fit them, then fade (Daniel, 22 Oct 2026)
+"this step 2 looks broken though with it being cut off make this a rule to not happen if there's too much text anywhere fade it
+in". Every piece of words in a composition is sized for the longest real text it can get; anything that can still run past an
+edge ends in a soft fade (a mask to transparent), never sliced by the frame or by `overflow: hidden`. The steps panel does this
+(PunchLayer: the size is brought down until the step being said and the first line of the next fit; the list fades out at the
+bottom). Full rule: creslo-frontend CLAUDE.md, the standing rule of the same name.

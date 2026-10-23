@@ -42,12 +42,12 @@ export const FONT_REGISTRY: FontEntry[] = [
   // --- Display ---
   { name: 'Montserrat', role: 'display', fontFamily: 'Montserrat', load: () => loadMontserrat('normal', { weights: ['400', '800'], subsets: ['latin'] }) },
   { name: 'Anton', role: 'display', fontFamily: 'Anton', load: () => loadAnton('normal', { weights: ['400'], subsets: ['latin'] }) },
-  { name: 'Fraunces', role: 'display', fontFamily: 'Fraunces', load: () => loadFraunces('normal', { weights: ['400', '600', '700'], subsets: ['latin'] }) },
+  { name: 'Fraunces', role: 'display', fontFamily: 'Fraunces', load: () => { loadFraunces('italic', { weights: ['700'], subsets: ['latin'] }); return loadFraunces('normal', { weights: ['400', '600', '700'], subsets: ['latin'] }) } },   // italic: the serif reel words (PUNCH LOOK 3)
   { name: 'Poppins', role: 'display', fontFamily: 'Poppins', load: () => loadPoppins('normal', { weights: ['400', '600', '700'], subsets: ['latin'] }) },
   { name: 'DM Serif Display', role: 'display', fontFamily: 'DM Serif Display', load: () => loadDMSerifDisplay('normal', { weights: ['400'], subsets: ['latin'] }) },
   { name: 'Bebas Neue', role: 'display', fontFamily: 'Bebas Neue', load: () => loadBebasNeue('normal', { weights: ['400'], subsets: ['latin'] }) },
   { name: 'Archivo Black', role: 'display', fontFamily: 'Archivo Black', load: () => loadArchivoBlack('normal', { weights: ['400'], subsets: ['latin'] }) },
-  { name: 'Playfair Display', role: 'display', fontFamily: 'Playfair Display', load: () => loadPlayfairDisplay('normal', { weights: ['400', '700'], subsets: ['latin'] }) },
+  { name: 'Playfair Display', role: 'display', fontFamily: 'Playfair Display', load: () => { loadPlayfairDisplay('italic', { weights: ['700'], subsets: ['latin'] }); return loadPlayfairDisplay('normal', { weights: ['400', '700'], subsets: ['latin'] }) } },   // italic: the serif reel words (PUNCH LOOK 3)
   { name: 'Space Grotesk', role: 'display', fontFamily: 'Space Grotesk', load: () => loadSpaceGrotesk('normal', { weights: ['400', '700'], subsets: ['latin'] }) },
   { name: 'Syne', role: 'display', fontFamily: 'Syne', load: () => loadSyne('normal', { weights: ['400', '700', '800'], subsets: ['latin'] }) },
   { name: 'Oswald', role: 'display', fontFamily: 'Oswald', load: () => loadOswald('normal', { weights: ['400', '700'], subsets: ['latin'] }) },
@@ -76,7 +76,7 @@ export const FONT_REGISTRY: FontEntry[] = [
 // Load a family on demand, once per render process. loadFont self-registers a delayRender, so
 // the frame waits for the font; we also gate our own delayRender on waitUntilDone for safety.
 const requestedFonts = new Set<string>()
-function ensureFont(family?: string) {
+export function ensureFont(family?: string) {
   if (!family || requestedFonts.has(family)) return
   const entry = FONT_REGISTRY.find((f) => f.fontFamily === family)
   if (!entry) return
@@ -99,6 +99,8 @@ const STYLE_CONFIG: Record<CaptionStyle, StyleConfig> = {
   lower_third: { font: 'Fraunces', textColor: '#F5EFE0', accent: 'brand', weight: 600, uppercase: false, sizeMul: 1, placement: 'lowerThird', reveal: 'fade', activeFx: 'none', stroke: false, band: { fill: '#1A1A1F', accentEdge: 'brand' } },
   big_subtitle: { font: 'Inter', textColor: '#FFFFFF', accent: 'brand', weight: 700, uppercase: false, sizeMul: 1.18, placement: 'center', reveal: 'wordSpring', activeFx: 'none', stroke: true },
   highlighter: { font: 'Poppins', textColor: '#0F1115', accent: '#FFE14D', weight: 700, uppercase: false, sizeMul: 1, placement: 'center', reveal: 'wordSpring', activeFx: 'highlight', stroke: false },
+  // Punch (R1, 22 Oct 2026): drawn by the PUNCH LOOK components; this entry is what any other caption path falls back to.
+  punch: { font: 'Inter', textColor: '#FFFFFF', accent: 'brand', weight: 800, uppercase: false, sizeMul: 1, placement: 'center', reveal: 'fade', activeFx: 'none', stroke: false },
 }
 
 // White or near-black depending on a colour's luminance (Bold Box block text).
@@ -128,7 +130,7 @@ const normWord = (w: string) => w.toLowerCase().replace(/[^a-z0-9]/g, '')
 
 // Clean sans fallback so a font that fails to load degrades to Arial/sans, not a rough stroked
 // system serif. MUST stay byte-identical to the frontend mirror src/remotion/ReelVideo.tsx.
-const fam = (f: string) => `'${f}', 'Arial', sans-serif`
+export const fam = (f: string) => `'${f}', 'Arial', sans-serif`
 
 // THE APPS' OWN BUTTONS AND TEXT (October reels audit R1, 8 Oct 2026). Instagram, TikTok and
 // Shorts draw the username, caption, sound and the like/comment/share column over the bottom third
@@ -353,7 +355,7 @@ export const Captions: React.FC<{
 // next group starts, or leaves soon after its last word when the voice pauses.
 // MUST stay byte-identical to the frontend mirror src/remotion/ReelVideo.tsx (the reel mirror test
 // compares from "SPOKEN CAPTIONS" to "END SPOKEN CAPTIONS").
-export type SpokenWord = { t: string; s: number; e: number }   // frames, local to the beat
+export type SpokenWord = { t: string; s: number; e: number; k?: number }   // frames, local to the beat
 const SPOKEN_BOTTOM = '36%'
 // A group closes at three words, after punctuation, or before it would pass 16 letters.
 export function spokenGroups(words: SpokenWord[]): SpokenWord[][] {

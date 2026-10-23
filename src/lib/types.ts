@@ -35,11 +35,14 @@ export type ReelScene = {
   // A saved character's cut-out on a text card or the end card (reels brief C1, 21 Oct 2026): a PNG with no
   // background, drawn small in the lower-left corner of the safe area. Ignored on footage beats.
   character_cut?: string | null
+  // A layer over the footage in the punch look (reels reference 2, 22 Oct 2026): a big figure, a numbered list label held
+  // as a header, the split panel of numbered steps, or one of the owner's pictures floating in a card. Set by the planner.
+  layer?: ReelLayer | null
 }
 
 // Single source of truth for caption-style keys. The union AND the render-side
 // validation list (ReelVideo.tsx) both derive from this, so adding a style is one edit.
-export const CAPTION_STYLE_KEYS = ['pop', 'karaoke', 'clean', 'bold_box', 'typewriter', 'lower_third', 'big_subtitle', 'highlighter'] as const
+export const CAPTION_STYLE_KEYS = ['pop', 'karaoke', 'clean', 'bold_box', 'typewriter', 'lower_third', 'big_subtitle', 'highlighter', 'punch'] as const
 export type CaptionStyle = typeof CAPTION_STYLE_KEYS[number]
 
 // Per-style visual config — the data the Captions render reads for every visual
@@ -139,6 +142,33 @@ export type Beat = {
   speed?: number
   // A saved character's cut-out on a text card or the end card (C1).
   character?: string | null
+  // A layer over the footage in the punch look (reels reference 2): checked by cleanLayer.
+  layer?: ReelLayer | null
+}
+
+// LAYERS (reels reference 2, 22 Oct 2026): what a footage beat can carry over its picture in the punch look. Every line shown,
+// not just said - the figure big, the list point held as a header, the step on a panel, the thing named in a card.
+export type ReelLayer =
+  | { kind: 'number'; text: string }
+  | { kind: 'label'; n: number; text: string }
+  | { kind: 'steps'; n: number; of: number; text: string; items?: string[] }
+  | { kind: 'card'; image: string }
+const layerText = (v: unknown, max: number): string => String(v || '').replace(/[<>{}]/g, '').replace(/\s+/g, ' ').trim().slice(0, max)
+export function cleanLayer(v: unknown): ReelLayer | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  const n = Math.round(Number(o.n)), of = Math.round(Number(o.of))
+  if (o.kind === 'number') { const t = layerText(o.text, 10); return t && /\d/.test(t) ? { kind: 'number', text: t } : null }
+  if (o.kind === 'label') { const t = layerText(o.text, 40); return t && n >= 1 && n <= 9 ? { kind: 'label', n, text: t } : null }
+  if (o.kind === 'steps') {
+    const t = layerText(o.text, 40)
+    if (!t || !(n >= 1 && n <= 9 && of >= n && of <= 9)) return null
+    // Every step's words (LAYERS 2), so the panel can list them and stay up from step to step; only when each one is there.
+    const items = Array.isArray(o.items) ? o.items.slice(0, 9).map((x) => layerText(x, 40)) : []
+    return items.length === of && items.every(Boolean) ? { kind: 'steps', n, of, text: t, items } : { kind: 'steps', n, of, text: t }
+  }
+  if (o.kind === 'card') { const u = String(o.image || ''); return /^https:\/\//i.test(u) && u.length < 900 ? { kind: 'card', image: u } : null }
+  return null
 }
 
 // A clip start in seconds, checked: 0 to 600 (P3 - a stock clip a second or so in; your own clip from
@@ -188,6 +218,7 @@ export function buildBeats(reel: ReelData): Beat[] {
       clipStart: startAt(s.clip_start),
       speed: speedOf(s.speed),
       character: (s.beat_type === 'text' || s.beat_type === 'cta') && typeof s.character_cut === 'string' && /^https:\/\//i.test(s.character_cut) ? s.character_cut : null,
+      layer: (!s.beat_type || s.beat_type === 'clip' || s.beat_type === 'mockup') ? cleanLayer(s.layer) : null,
     })
   }
   if (!beats.length) beats.push({ text: '', isHook: true, clipUrl: null, seconds: 3, emphasis: [] })

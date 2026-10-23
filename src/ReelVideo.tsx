@@ -97,7 +97,11 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
         // every cut was an effect.
         const mid = Math.max(1, Math.round((beats.length - 1) / 2))
         let cut: Cut
+        // A steps panel or a list header carried from one beat to the next is never cut across (LAYERS 2, 22 Oct 2026: it
+        // holds still while the picture changes under it).
+        const held = !!(beats[i].layer && beats[i - 1].layer && beats[i].layer!.kind === beats[i - 1].layer!.kind && (beats[i].layer!.kind === 'steps' || beats[i].layer!.kind === 'label'))
         if (i === beats.length - 1 && beats[i].beatType === 'cta') cut = { kind: 'drift', p: dissolve() }
+        else if (held) cut = { kind: 'hard', p: hardCut() }
         else if (i === mid && beats.length >= 4) cut = kinetic ? { kind: 'whip', p: whipPan(seed % 2 === 0 ? 1 : -1) } : { kind: 'drift', p: dissolve() }
         else cut = { kind: 'hard', p: hardCut() }
         cuts.push({ at: s, cut })
@@ -123,7 +127,7 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
     const b = vt && vt[i]
     if (!b || !Array.isArray(b.words) || !b.words.length) return undefined
     return b.words.filter((w) => w && typeof w.t === 'string' && Number.isFinite(w.s) && Number.isFinite(w.e))
-      .map((w) => ({ t: w.t, s: Math.round(w.s * fps) - beatStarts[i], e: Math.round(w.e * fps) - beatStarts[i] }))
+      .map((w) => ({ t: w.t, s: Math.round(w.s * fps) - beatStarts[i], e: Math.round(w.e * fps) - beatStarts[i], k: (w as { k?: number }).k ? 1 : undefined }))
   }
   // The look, per beat (reels premium pass P2, 8 Oct 2026). A text card sits on the next shot's
   // still (else the last one's); the end card on the shot before it. (The punch-in a beat went in
@@ -133,6 +137,23 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
     if (beats[i].beatType === 'text') { for (let j = i + 1; j < beats.length; j++) if (at(j)) return at(j); for (let j = i - 1; j >= 0; j--) if (at(j)) return at(j); return null }
     if (beats[i].beatType === 'cta') { for (let j = i - 1; j >= 0; j--) if (at(j)) return at(j); return null }
     return null
+  }
+  // A text card's ground is the next shot itself, frozen on the frame it opens on (batch 7, 22 Oct 2026), when that next beat
+  // is footage; otherwise the still above.
+  // The call to action's keyword (punch look, R1): held above the last words of the shot before the end card, from the moment
+  // the call to action is said there. The keyword the planner chose for the end card's line, else its first word of 4+ letters.
+  const headingFor = (i: number): string | null => {
+    const n = beats[i + 1]
+    if (!n || n.beatType !== 'cta') return null
+    const ws = String(n.text || '').trim().split(/\s+/).filter(Boolean)
+    const k = (n.emphasis || []).find((x) => Number.isInteger(x) && x >= 0 && x < ws.length)
+    const w = k !== undefined ? ws[k] : (ws.find((x) => x.replace(/[^A-Za-z]/g, '').length >= 4) || ws[0] || '')
+    return w.replace(/[^A-Za-z0-9'&-]/g, '') || null
+  }
+  const shotFor = (i: number): { src: string; start?: number } | null => {
+    const n = beats[i + 1]
+    if (beats[i].beatType !== 'text' || !n || !n.clipUrl || (n.beatType && n.beatType !== 'clip')) return null
+    return { src: n.clipUrl, start: n.clipStart || 0 }
   }
 
   // ---- MUSIC MIX (October reels audit R1, 8 Oct 2026) ----
@@ -168,7 +189,7 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
 
   // One beat as drawn: in its place on the timeline, and again for the loop ending (C2). MUST stay identical in both copies.
   const beatEl = (b: (typeof beats)[number], i: number) => (
-    <Beat text={b.text} isHook={b.isHook} clipUrl={b.clipUrl} accent={accent} index={i} durationInFrames={seqFrames[i]} captionStyle={captionStyle} captionConfig={reel.captionConfig} emphasis={b.emphasis} zone={b.zone} beatType={b.beatType} poster={b.poster} brandName={reel.brandName} brandLogo={reel.brandLogo} brandWordmark={reel.brandWordmark} fieldTone={b.fieldTone || reel.fieldTone} fieldColor={b.fieldColor} fieldStyle={b.fieldStyle} kenBurns={reel.kenBurns} grade={reel.grade} speech={speechFor(i)} spoken={spokenFor(i)} tone={b.tone} clipStart={b.clipStart} speed={b.speed} still={stillFor(i)} headFont={reel.headFont} character={b.character} />
+    <Beat text={b.text} isHook={b.isHook} clipUrl={b.clipUrl} accent={accent} index={i} durationInFrames={seqFrames[i]} captionStyle={captionStyle} captionConfig={reel.captionConfig} emphasis={b.emphasis} zone={b.zone} beatType={b.beatType} poster={b.poster} brandName={reel.brandName} brandLogo={reel.brandLogo} brandWordmark={reel.brandWordmark} fieldTone={b.fieldTone || reel.fieldTone} fieldColor={b.fieldColor} fieldStyle={b.fieldStyle} kenBurns={reel.kenBurns} grade={reel.grade} speech={speechFor(i)} spoken={spokenFor(i)} tone={b.tone} clipStart={b.clipStart} speed={b.speed} still={stillFor(i)} headFont={reel.headFont} character={b.character} shot={shotFor(i)} layer={b.layer} heading={headingFor(i)} />
   )
 
   // Build an alternating Sequence / Transition list for a smooth cut between beats.
@@ -193,7 +214,9 @@ export const ReelVideo: React.FC<ReelData> = (reel) => {
 
 
   return (
-    <AbsoluteFill style={{ backgroundColor: '#000' }}>
+    // Numbers as tall as the capitals in every word of the reel (EVERY PICTURE IS FINISHED WORK rule 6, 22 Oct 2026): Playfair,
+    // Fraunces and Cormorant draw small old-style figures otherwise. Every caption style and layer inherits it.
+    <AbsoluteFill style={{ backgroundColor: '#000', fontVariantNumeric: 'lining-nums' }}>
       <TransitionSeries>{children}</TransitionSeries>
       {/* SFX on cuts (Reels v3 phase 4): whoosh under whips (the punch hit has
           had no cut to ride since P2b), a riser into the final beat; dissolves stay silent. Fail-open by design —

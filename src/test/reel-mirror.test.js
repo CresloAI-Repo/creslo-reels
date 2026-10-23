@@ -115,8 +115,28 @@ same('character on a card (Beat.tsx / ReelVideo.tsx)',
   block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '// ---- CHARACTER ON A CARD', '// ---- end CHARACTER ON A CARD'),
   block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// ---- CHARACTER ON A CARD', '// ---- end CHARACTER ON A CARD'));
 same('one beat as drawn (ReelVideo.tsx)',
-  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  // One beat as drawn:', 'character={b.character} />'),
-  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  // One beat as drawn:', 'character={b.character} />'));
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  // One beat as drawn:', 'heading={headingFor(i)} />'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  // One beat as drawn:', 'heading={headingFor(i)} />'));
+// A text card on the frozen first frame of the next shot (batch 7, 22 Oct 2026): which shot, and how it is drawn.
+same('next shot for a text card (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  const shotFor = ', '\n  }\n'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  const shotFor = ', '\n  }\n'));
+// The punch look (R1, 22 Oct 2026): captions, title, paper card, end card - and which keyword is held.
+same('punch look (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '// ===== PUNCH LOOK', '// ===== END PUNCH LOOK ====='),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// ===== PUNCH LOOK', '// ===== END PUNCH LOOK ====='));
+same('punch cards (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '  // ---- PUNCH CARDS', '  // ---- end PUNCH CARDS'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  // ---- PUNCH CARDS', '  // ---- end PUNCH CARDS'));
+same('punch layers (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '          // ---- PUNCH LAYERS', '          // ---- end PUNCH LAYERS'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '          // ---- PUNCH LAYERS', '          // ---- end PUNCH LAYERS'));
+same('the held keyword (ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '  const headingFor = ', '\n  }\n'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '  const headingFor = ', '\n  }\n'));
+same('frozen next shot (Beat.tsx / ReelVideo.tsx)',
+  block(read(path.join(__dirname, '..', 'components', 'Beat.tsx')), '// A text card sits on the FROZEN FIRST FRAME', '  if (!src) return'),
+  block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '// A text card sits on the FROZEN FIRST FRAME', '  if (!src) return'));
 same('loop ending (ReelVideo.tsx)',
   block(read(path.join(__dirname, '..', 'ReelVideo.tsx')), '      {/* ---- LOOP ENDING', '      {/* ---- end LOOP ENDING */}'),
   block(read(path.join(FRONT, 'src', 'remotion', 'ReelVideo.tsx')), '      {/* ---- LOOP ENDING', '      {/* ---- end LOOP ENDING */}'));

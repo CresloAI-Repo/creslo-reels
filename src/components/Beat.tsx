@@ -1,8 +1,8 @@
 import React from 'react'
-import { AbsoluteFill, Freeze, OffthreadVideo, Img, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion'
+import { AbsoluteFill, Freeze, OffthreadVideo, Img, useCurrentFrame, useVideoConfig, interpolate, spring, Easing } from 'remotion'
 import { loadFont as loadWordmarkSerif } from '@remotion/google-fonts/DMSerifDisplay'
-import { Captions, SpokenCaptions, type SpokenWord } from './Captions'
-import type { CaptionStyle, StyleConfig } from '../lib/types'
+import { Captions, SpokenCaptions, ensureFont, fam, type SpokenWord } from './Captions'
+import type { CaptionStyle, StyleConfig, ReelLayer } from '../lib/types'
 
 // The wordmark serif — the same face as Creslo's own "Creslo." brand mark. Every
 // brand's name renders in this editorial style on the CTA end-card.
@@ -77,8 +77,22 @@ export const FilmFinish: React.FC<{ frame: number }> = ({ frame }) => (
 // The ground behind a text card or the end card: a still from the reel itself, softened and
 // darkened under a wash of the brand colour - or the brand colour alone when there is none.
 // (The old ground was a drifting field of blurred blobs, grids and particles.)
-export const StillGround: React.FC<{ src?: string | null; accent: string; frame: number; durationInFrames: number; dim?: number; tint?: number }> = ({ src, accent, frame, durationInFrames, dim = 0.5, tint = 0.22 }) => {
+// A text card sits on the FROZEN FIRST FRAME OF THE NEXT SHOT (reels premium audit P2 / batch 7, 22 Oct 2026: "words over a
+// darkened, frozen frame of the next shot"): the very frame that shot opens on, darkened and only lightly softened, easing back
+// to its own size so the cut into it plays on from the card. If that clip cannot be read, the still (else the brand colour).
+export const StillGround: React.FC<{ src?: string | null; accent: string; frame: number; durationInFrames: number; dim?: number; tint?: number; shot?: { src: string; start?: number } | null }> = ({ src, accent, frame, durationInFrames, dim = 0.5, tint = 0.22, shot }) => {
   const t = frame / Math.max(1, durationInFrames)
+  const { fps } = useVideoConfig()
+  const [shotFailed, setShotFailed] = React.useState(false)
+  if (shot && shot.src && !shotFailed) return (
+    <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      <Freeze frame={0}>
+        <OffthreadVideo src={shot.src} muted trimBefore={shot.start ? Math.round(shot.start * fps) : undefined} onError={() => setShotFailed(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${1.06 - 0.06 * t})`, filter: `blur(2px) brightness(${dim * 0.9}) saturate(0.9)` }} />
+      </Freeze>
+      <AbsoluteFill style={{ background: /^#[0-9a-fA-F]{6}$/.test(accent) ? hexA(accent, tint) : 'transparent', mixBlendMode: 'multiply' }} />
+    </AbsoluteFill>
+  )
   if (!src) return <AbsoluteFill style={{ background: `linear-gradient(180deg, ${shade(accent, 0.05)} 0%, ${shade(accent, -0.07)} 100%)` }} />
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
@@ -554,6 +568,526 @@ const CardCharacter: React.FC<{ src?: string | null; size: number; frame: number
   )
 }
 // ---- end CHARACTER ON A CARD
+// ===== PUNCH LOOK (reels batch R1, 22 Oct 2026) =====
+// Daniel, 22 Oct 2026, on a reference ad: "this is the kind of premium finished video I'm on about", then "use them as reference
+// but dont copy them directly" and "I want this in the generations code". The rules measured from it, built in Creslo's own look
+// (project doc claude/reels-reference-2026-10-22.md):
+// - the words being said, one to three at a time, Title Case, white, heavy, a soft shadow and no box, centred in the upper third;
+//   a group replaces the last with no animation, except the first group of a sentence and any long word, which wipe in left to
+//   right out of a blur in 6 frames (0.2 s);
+// - the call to action's keyword lands large at the top as it is said and stays while the last words change under it;
+// - a text card is paper in the brand's colours with a fine dot grid, its words landing one by one in different places; split
+//   (paper above, the next shot below) when footage follows, the paper squeezing up into it at the end;
+// - the end card's logo is thrown in, lands with a squash and settles, the name typing out under it.
+// MUST stay identical in both copies (the reel mirror test compares from "PUNCH LOOK" to "END PUNCH LOOK").
+export type PunchWord = { t: string; s: number; e: number; k?: number }
+export const PUNCH_TOP = 0.24
+const PUNCH_FONT = 'Archivo Black'
+const PUNCH_EM = 0.72   // Archivo Black capitals: about 0.72 of the size per letter
+const punchLetters = (t: string) => t.replace(/[^A-Za-z0-9]/g, '').length
+// The look of every punch word over a picture: heavy capitals, a dark outline round the letters, a hard shadow and a soft one.
+const punchType = (size: number): React.CSSProperties => ({
+  fontFamily: fam(PUNCH_FONT), fontWeight: 400, fontSize: size, letterSpacing: '0.005em', textTransform: 'uppercase',
+})
+// The key word of a group: a figure, else the longest word of 5 letters or more, else none.
+export function punchKey(ws: string[]): number {
+  const fig = ws.findIndex((w) => /\d/.test(w))
+  if (fig >= 0) return fig
+  let best = -1, len = 4
+  ws.forEach((w, i) => { const n = punchLetters(w); if (n > len) { best = i; len = n } })
+  return best
+}
+export const titleWord = (w: string) => { const i = w.search(/[A-Za-z]/); return i < 0 ? w : w.slice(0, i) + w.charAt(i).toUpperCase() + w.slice(i + 1) }
+// Groups: up to three words and 12 letters; a word of 8 letters or more stands alone; a group closes at punctuation and where
+// the call to action's words begin (k).
+export function punchGroups(words: PunchWord[]): PunchWord[][] {
+  const out: PunchWord[][] = []
+  let cur: PunchWord[] = []
+  let len = 0
+  for (const w0 of words || []) {
+    const t = String((w0 && w0.t) || '').trim()
+    if (!t) continue
+    const w = { ...w0, t }
+    const long = punchLetters(t) >= 8
+    if (cur.length && (cur.length >= 3 || len + t.length > 12 || long || !!w.k !== !!cur[0].k)) { out.push(cur); cur = []; len = 0 }
+    cur.push(w)
+    len += t.length + (cur.length > 1 ? 1 : 0)
+    if (long || /[.,!?;:]$/.test(t)) { out.push(cur); cur = []; len = 0 }
+  }
+  if (cur.length) out.push(cur)
+  // A group of only small joining words ("and it is", "the") never stands alone: it joins the next group, so every slip carries
+  // a word that means something (read beside ManyChat frame by frame, 22 Oct 2026). Not across a full stop or comma, and never
+  // past six words.
+  const small = (t: string) => PUNCH_SMALL.has(t.toLowerCase().replace(/[^a-z]/g, ''))
+  for (let i = out.length - 2; i >= 0; i--) {
+    const g = out[i]
+    if (g.every((w) => small(w.t)) && !/[.,!?;:]$/.test(g[g.length - 1].t) && g.length + out[i + 1].length <= 6) out.splice(i, 2, g.concat(out[i + 1]))
+  }
+  return out
+}
+// A line with no voice: its words paced through the beat (across the spoken span when there is one).
+export function punchLineWords(text: string, dur: number, speech?: { start: number; end: number }): PunchWord[] {
+  const ws = String(text || '').trim().split(/\s+/).filter(Boolean)
+  if (!ws.length) return []
+  const s0 = speech ? Math.max(0, speech.start) : 2
+  const s1 = Math.max(s0 + ws.length * 4, Math.min(dur - 6, speech ? speech.end : dur - 6))
+  const step = (s1 - s0) / ws.length
+  return ws.map((t, i) => ({ t, s: Math.round(s0 + i * step), e: Math.round(s0 + (i + 1) * step) - 1 }))
+}
+// Big, and never wider than 80% of the frame.
+const punchSize = (width: number, text: string, max = 0.104) => Math.round(Math.min(width * max, (width * 0.84) / Math.max(1, text.length * PUNCH_EM)))
+const PUNCH_SHADOW = '0 6px 22px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.5)'
+const pHex = (hex: string): [number, number, number] => {
+  const h = (/^#[0-9a-fA-F]{3,8}$/.test(hex || '') ? hex : '#9d6a40').replace('#', '')
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h.slice(0, 6)
+  const n = parseInt(f, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+const pLum = (rgb: [number, number, number]) => { const c = rgb.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4) }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] }
+const pMix = (a: [number, number, number], b: [number, number, number], t: number) => a.map((v, i) => Math.round(v + (b[i] - v) * t)) as [number, number, number]
+const pCss = (c: [number, number, number]) => `rgb(${c[0]},${c[1]},${c[2]})`
+// The paper and its ink, from the brand colour: paper is cream with a breath of the brand; ink is the brand darkened until it
+// reads at 4.5:1 on that paper (readability law).
+export function punchPaper(accent: string): { paper: string; ink: string; dot: string } {
+  const a = pHex(accent)
+  const paper = pMix([250, 246, 239], a, 0.05)
+  let ink = a
+  for (let i = 0; i < 12 && (pLum(paper) + 0.05) / (pLum(ink) + 0.05) < 4.5; i++) ink = pMix(ink, [20, 14, 10], 0.25)
+  return { paper: pCss(paper), ink: pCss(ink), dot: `rgba(${ink[0]},${ink[1]},${ink[2]},0.13)` }
+}
+// The key word's colour: the brand's own, lightened until it is bright beside the dark outline (luminance 0.4 or more).
+export function punchTint(accent: string): string {
+  // The brand's hue, made vivid and light (saturation at least 0.7, lightness 0.66), then lightened further only if it is
+  // still dim - a pale cream tint read weak on the picture (22 Oct 2026, PUNCH LOOK 3).
+  const [r, g, b] = pHex(accent).map((v) => v / 255)
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn
+  let h = 0
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4
+  h = (h * 60 + 360) % 360
+  const l0 = (mx + mn) / 2, s0 = d ? d / (1 - Math.abs(2 * l0 - 1)) : 0
+  const s = d ? Math.max(0.7, s0) : 0, l = 0.66
+  const c2 = (1 - Math.abs(2 * l - 1)) * s, x = c2 * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c2 / 2
+  const [r1, g1, b1] = h < 60 ? [c2, x, 0] : h < 120 ? [x, c2, 0] : h < 180 ? [0, c2, x] : h < 240 ? [0, x, c2] : h < 300 ? [x, 0, c2] : [c2, 0, x]
+  let c: [number, number, number] = [Math.round((r1 + m) * 255), Math.round((g1 + m) * 255), Math.round((b1 + m) * 255)]
+  for (let i = 0; i < 10 && pLum(c) < 0.38; i++) c = pMix(c, [255, 250, 242], 0.12)
+  return pCss(c)
+}
+
+// The words being said (or a line with no voice), and the call to action's keyword held above them.
+// PUNCH LOOK 4 - THE WORDS ARE PAPER TOO (Daniel, 22 Oct 2026: "Is there a more premium way visualise these beat texts ... we
+// want everything reading and bouncing off one another so it all looks like it's meant to be there because at the minute the
+// beat text just look like an after thought"). The words are now made of the same things as the layers: slips of the same
+// paper, the same ink, the same corner, shadow and spring as the number tile, the list header and the steps panel. Each group
+// is a slip (or two, stacked, a line each) leaning a degree or two, alternately; its key word sits on a block of the brand
+// colour (the approved "key word on a brand-colour block", 8 Oct 2026); each word appears in the slip as it is said; the next
+// slip lands as the last one lifts away, so they hand over rather than cut. Over the big number the slip docks on the tile's
+// top edge. The typeface follows the brand's headline font (punchLook). Readable on any picture: ink on paper at 4.5:1.
+export type PunchLook = 'serif' | 'condensed' | 'heavy'
+export const punchLook = (font?: { family: string } | null): PunchLook => {
+  const f = String((font && font.family) || '')
+  return f === 'Playfair Display' || f === 'Fraunces' ? 'serif' : f === 'Oswald' ? 'condensed' : 'heavy'
+}
+const LOOK_FONT: Record<PunchLook, string> = { serif: 'Playfair Display', condensed: 'Oswald', heavy: PUNCH_FONT }
+// How wide a line of words is, in ems, MEASURED from the fonts' own widths (22 Oct 2026, fontTools on the installed files):
+// Archivo Black capitals 0.72-0.76 (UNMISTAKABLY 0.755), Oswald 700 capitals up to 0.53, Playfair 700 italic capitals up to
+// 0.69 and its small letters about 0.47. The old single figures under-measured long capital words, so a slip of
+// "COMFORTABLE," ran to the frame's edge in the stress reel. Every slip is sized from this, with room to spare (never cut off).
+const CAP_EM: Record<PunchLook, number> = { serif: 0.7, condensed: 0.55, heavy: 0.78 }
+const LOW_EM: Record<PunchLook, number> = { serif: 0.5, condensed: 0.46, heavy: 0.78 }
+const punchEms = (look: PunchLook, s: string) => Array.from(s).reduce((m, ch) => m + (ch === ' ' ? 0.3 : /[A-Z]/.test(ch) ? CAP_EM[look] : LOW_EM[look]), 0)
+// Where the words sit, from the beat's caption zone (the band with least in it): never in the apps' top 14% or bottom 35%.
+const punchTopFor = (zone?: string | null) => (zone === 'middle' ? 0.4 : zone === 'bottom' ? 0.5 : PUNCH_TOP)
+// The brand-colour block a key word sits on, and the colour its letters take (4.5:1 on the block, or the ink on a light block).
+export function punchBlock(accent: string): { bg: string; fg: string } {
+  const a = pHex(accent)
+  const paper = pMix([250, 246, 239], a, 0.05)
+  const ratio = (x: [number, number, number], y: [number, number, number]) => { const l1 = pLum(x), l2 = pLum(y); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05) }
+  let bg = a
+  for (let i = 0; i < 10 && ratio(bg, paper) < 4.5 && ratio(bg, [20, 14, 10]) < 4.5; i++) bg = pMix(bg, [20, 14, 10], 0.18)
+  return { bg: pCss(bg), fg: ratio(bg, paper) >= 4.5 ? pCss(paper) : 'rgb(20,14,10)' }
+}
+// Words into lines of up to 12 letters (a long word alone).
+const punchLines = (ws: string[]): number[][] => {
+  const out: number[][] = []
+  ws.forEach((w, i) => { const l = out[out.length - 1]; const len = l ? l.reduce((m, k) => m + ws[k].length + 1, -1) : 0; if (l && len + 1 + w.length <= 12) l.push(i); else out.push([i]) })
+  return out
+}
+// The top of the big number's tile, so a slip can sit on it (PunchLayer 'number' draws the tile from the same sums).
+export const punchNumberTop = (width: number, height: number, text: string) => {
+  const size = Math.round(Math.min(width * 0.25, (width * 0.68) / Math.max(1, String(text).length * PUNCH_EM)))
+  return height * 0.53 - (size * 1.4 + 14) / 2
+}
+// Small joining words set smaller and raised, as ManyChat's "THINK of ALL" (read frame by frame 22 Oct 2026).
+const PUNCH_SMALL = new Set(['of', 'the', 'a', 'an', 'to', 'and', 'in', 'on', 'for', 'with', 'at', 'by', 'or', 'is', 'it', 'its', 'your', 'our', 'my'])
+// One stack of slips. arrive(i): how far word i has arrived (0-1); land: the stack's own spring (0-1); lift: leaving (0-1).
+// Words not yet said take no room, so the slip grows as they are said (ManyChat's block grows word by word, 22 Oct 2026).
+// Every other group's slip is the brand colour with its key word on paper, so the colour changes as the groups change.
+const PunchSlips: React.FC<{ ws: string[]; keyIndex: number; size: number; look: PunchLook; accent: string; seed: number; land: number; lift?: number; arrive?: (i: number) => number; style?: React.CSSProperties }> = ({ ws, keyIndex, size, look, accent, seed, land, lift = 0, arrive, style }) => {
+  const pp = punchPaper(accent)
+  const bb = punchBlock(accent)
+  const flip = seed % 2 === 1
+  const paper = flip ? bb.bg : pp.paper, ink = flip ? bb.fg : pp.ink
+  const block = flip ? { bg: pp.paper, fg: pp.ink } : bb
+  const face: React.CSSProperties = look === 'serif'
+    ? { fontFamily: fam('Playfair Display'), fontWeight: 700, fontStyle: 'italic', letterSpacing: '-0.01em' }
+    : look === 'condensed' ? { fontFamily: fam('Oswald'), fontWeight: 700, letterSpacing: '0.01em' } : { fontFamily: fam(PUNCH_FONT), fontWeight: 400, letterSpacing: '0.005em' }
+  const lines = punchLines(ws)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: size * 0.1, opacity: Math.min(1, land * 2.5) * Math.max(0, 1 - lift * 2.2), transform: `translateY(${-lift * size * 1.6}px) scale(${(0.7 + 0.3 * land) * (1 - lift * 0.12)})`, transformOrigin: '50% 100%', ...style }}>
+      {lines.map((ln, li) => {
+        const tilt = ((seed + li) % 2 ? 1.6 : -1.8) * (0.4 + 0.6 * land)
+        if (arrive && ln.every((k) => arrive(k) <= 0)) return null
+        return (
+          <div key={li} style={{ ...face, fontSize: size, lineHeight: 1.12, color: ink, background: paper, borderRadius: Math.round(size * 0.24), padding: `${Math.round(size * 0.12)}px ${Math.round(size * 0.3)}px ${Math.round(size * 0.14)}px`, boxShadow: '0 24px 50px -22px rgba(0,0,0,0.65), 0 2px 0 rgba(0,0,0,0.08)', transform: `rotate(${tilt}deg) translateY(${(1 - land) * size * 0.3 * (li + 1)}px)`, whiteSpace: 'nowrap', fontVariantNumeric: 'lining-nums' }}>
+            {ln.map((k, j) => {
+              const a = arrive ? arrive(k) : 1
+              if (a <= 0) return null
+              const on = k === keyIndex
+              const isSmall = (t: string) => PUNCH_SMALL.has(t.toLowerCase().replace(/[^a-z]/g, ''))
+              const small = !on && ws.length > 1 && isSmall(ws[k]) && ws.some((w) => !isSmall(w))   // never when every word is a small one
+              return (
+                <span key={k} style={{ display: 'inline-block', verticalAlign: small ? '0.45em' : undefined, fontSize: small ? '0.58em' : undefined, marginLeft: j ? size * 0.22 : 0, opacity: Math.min(1, 0.25 + a), transform: a < 1 ? `translateY(${(1 - a) * size * 0.18}px) scale(${1 + (1 - a) * 0.12})` : undefined, ...(on ? { background: block.bg, color: block.fg, borderRadius: Math.round(size * 0.14), padding: `0 ${Math.round(size * 0.16)}px`, margin: `0 ${-Math.round(size * 0.06)}px 0 ${j ? Math.round(size * 0.16) : -Math.round(size * 0.06)}px` } : {}) }}>{ws[k]}</span>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+// As wide as the safe area allows (ManyChat's keyword block is most of the picture's width, read 22 Oct 2026): up to 84% of the
+// width for the longest line, the font no bigger than the cap.
+const punchSlipSize = (width: number, ws: string[], look: PunchLook, cap = 0.1) => {
+  const longest = punchLines(ws).reduce((m, l) => Math.max(m, punchEms(look, l.map((k) => ws[k]).join(' '))), 1)
+  return Math.round(Math.min(width * cap, (width * 0.84) / Math.max(1, longest + 0.8)))
+}
+// NOTHING SAID TWICE ON SCREEN (Daniel, 22 Oct 2026: "Why does the number come in twice? Surely you can make the code smart
+// enough to never duplicate things?"). The spoken words over a layer leave out what the layer already shows: the figure itself
+// (12,500 / 12500.00 / "twelve thousand five hundred"), its unit ("weeks", "pounds", "percent") and any other word on the tile.
+// What is left still says the line ("Weddings from" over a GBP 12,500 tile). A joining "and" left between two dropped number words
+// goes with them.
+const NUM_WORDS = new Set(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion', 'half', 'point'])
+export function punchWithout(words: PunchWord[], shown?: string | null): PunchWord[] {
+  const text = String(shown || '').trim()
+  if (!text || !Array.isArray(words)) return words || []
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const stem = (t: string) => norm(t).replace(/s$/, '')
+  const value = (t: string) => { const d = t.replace(/[^0-9.]/g, ''); return /\d/.test(d) ? parseFloat(d) : NaN }
+  const onTile = new Set(text.split(/\s+/).map(stem).filter(Boolean))
+  const values = text.split(/\s+/).map(value).filter((v) => Number.isFinite(v))
+  if (/\u00a3/.test(text)) { onTile.add('pound'); onTile.add('quid') }
+  if (/\$/.test(text)) onTile.add('dollar')
+  if (/%/.test(text)) { onTile.add('percent'); onTile.add('per'); onTile.add('cent') }
+  const hasFigure = values.length > 0
+  const drop = words.map((w) => {
+    const t = String((w && w.t) || '')
+    const v = value(t)
+    if (Number.isFinite(v) && values.some((x) => Math.abs(x - v) < 1e-9)) return true
+    return onTile.has(stem(t))
+  })
+  // A number said in words goes only as a run - next to another number word, the unit or the figure - so "the one we love"
+  // keeps its "one". A joining "and" inside the run goes too.
+  const isNum = (i: number) => i >= 0 && i < words.length && hasFigure && NUM_WORDS.has(norm(String((words[i] && words[i].t) || '')))
+  const isAnd = (i: number) => norm(String((words[i] && words[i].t) || '')) === 'and' && isNum(i - 1) && isNum(i + 1)
+  for (let pass = 0; pass < 4; pass++) words.forEach((w, i) => { if (!drop[i] && (isNum(i) || isAnd(i)) && (isNum(i - 1) || isNum(i + 1) || drop[i - 1] || drop[i + 1])) drop[i] = true })
+  return words.filter((_, i) => !drop[i])
+}
+export const PunchCaptions: React.FC<{ words: PunchWord[]; heading?: string | null; weight?: number; accent?: string; font?: { family: string } | null; zone?: string | null; dock?: number | null; shown?: string | null }> = ({ words: said, heading, accent = '#9d6a40', font, zone, dock, shown }) => {
+  const words = punchWithout(said, shown)
+  const frame = useCurrentFrame()
+  const { width, height, fps } = useVideoConfig()
+  const look = punchLook(font)
+  ensureFont(PUNCH_FONT)
+  ensureFont(LOOK_FONT[look])
+  const groups = punchGroups(words)
+  const kWord = (words || []).find((w) => w && w.k)
+  const headOn = !!heading && !!kWord && frame >= kWord.s - 2
+  const hs = headOn ? spring({ frame: frame - (kWord!.s - 2), fps, config: { damping: 11, mass: 0.7, stiffness: 160 } }) : 0
+  const head = String(heading || '').toUpperCase()
+  let gi = -1
+  for (let i = 0; i < groups.length; i++) if (frame >= groups[i][0].s - 1) gi = i
+  const caseOf = (t: string) => (look === 'serif' ? t : t.toUpperCase())
+  const slip = (k: number, leaving: boolean) => {
+    const g = groups[k]
+    const ws = g.map((w) => caseOf(w.t))
+    const land = spring({ frame: frame - (g[0].s - 1), fps, config: { damping: 11, mass: 0.7, stiffness: 160 } })
+    // The last slip leaves at once as the next lands (out-easing: most of the lift in the first frame), so the two never sit
+    // over each other for a frame (seen in the 15 fps strip, 22 Oct 2026).
+    const lift = leaving ? interpolate(frame, [groups[k + 1][0].s - 1, groups[k + 1][0].s + 2], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) }) : 0
+    const arrive = (i: number) => interpolate(frame, [g[i].s - 1, g[i].s + 2], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    const size = punchSlipSize(width, ws, look, 0.15)
+    const anchor: React.CSSProperties = dock != null
+      ? { position: 'absolute', left: 0, right: 0, bottom: height - dock + 22 }
+      : { position: 'absolute', left: 0, right: 0, top: headOn ? height * 0.15 + head.length * 0 + width * 0.2 : height * punchTopFor(zone) }
+    return <PunchSlips key={k} ws={ws} keyIndex={punchKey(ws)} size={size} look={look} accent={accent} seed={k} land={land} lift={lift} arrive={arrive} style={anchor} />
+  }
+  const g = gi >= 0 ? groups[gi] : null
+  const last = g ? g[g.length - 1] : null
+  const nextStart = gi + 1 < groups.length ? groups[gi + 1][0].s - 1 : Infinity
+  const showLine = !!g && !!last && frame <= Math.min(nextStart, last.e + 14)
+  const leaving = gi >= 1 && frame <= groups[gi][0].s + 3 && frame <= groups[gi - 1][groups[gi - 1].length - 1].e + 30
+  const headSize = Math.round(Math.min(width * 0.15, (width * 0.8) / Math.max(1, punchEms(look, head) + 0.8)))
+  const block = punchBlock(accent)
+  return (
+    <>
+      {headOn ? (
+        <div style={{ position: 'absolute', left: 0, right: 0, top: height * 0.15, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ fontFamily: fam(LOOK_FONT[look]), fontWeight: look === 'heavy' ? 400 : 700, fontStyle: look === 'serif' ? 'italic' : undefined, fontSize: headSize, lineHeight: 1.1, color: block.fg, background: block.bg, borderRadius: Math.round(headSize * 0.22), padding: `${Math.round(headSize * 0.1)}px ${Math.round(headSize * 0.3)}px`, boxShadow: '0 30px 60px -24px rgba(0,0,0,0.7)', transform: `rotate(${-2 * hs}deg) scale(${0.5 + 0.5 * hs})`, opacity: Math.min(1, hs * 2.5), whiteSpace: 'nowrap' }}>{head}</div>
+        </div>
+      ) : null}
+      {leaving ? slip(gi - 1, true) : null}
+      {showLine ? slip(gi, false) : null}
+    </>
+  )
+}
+
+// The opening title: the hook's words, whole, from the first frame (decision 3 A), as a stack of slips - its key word on the block.
+export const PunchTitle: React.FC<{ text: string; accent?: string; font?: { family: string } | null }> = ({ text, accent = '#9d6a40', font }) => {
+  const { width, height } = useVideoConfig()
+  const look = punchLook(font)
+  ensureFont(PUNCH_FONT)
+  ensureFont(LOOK_FONT[look])
+  const ws = String(text || '').trim().split(/\s+/).filter(Boolean).map((w) => (look === 'serif' ? w : w.toUpperCase()))
+  if (!ws.length) return null
+  return <PunchSlips ws={ws} keyIndex={punchKey(ws)} size={punchSlipSize(width, ws, look, 0.125)} look={look} accent={accent} seed={0} land={1} style={{ position: 'absolute', left: 0, right: 0, top: height * (PUNCH_TOP - 0.05) }} />
+}
+
+// A text card on paper. Split (paper above, the next shot frozen below) when footage follows; the paper squeezes up into the
+// shot in its last 5 frames. Full paper otherwise, the words sliding off to the right together at the end.
+export const PunchPaper: React.FC<{ text: string; accent: string; durationInFrames: number; shot?: { src: string; start?: number } | null; still?: string | null }> = ({ text, accent, durationInFrames, shot, still }) => {
+  const frame = useCurrentFrame()
+  const { width, height, fps } = useVideoConfig()
+  ensureFont(PUNCH_FONT)
+  const { paper, ink, dot } = punchPaper(accent)
+  const split = !!(shot && shot.src)
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean).map(titleWord)
+  // Rows of up to 12 letters, set left, right and centre in turn.
+  const rows: string[][] = []
+  for (const w of words) { const r = rows[rows.length - 1]; if (r && r.join(' ').length + 1 + w.length <= 12) r.push(w); else rows.push([w]) }
+  const panelH = split ? height * 0.5 : height
+  const longestRow = rows.reduce((m, r) => Math.max(m, r.join(' ').length), 1)
+  const size = Math.round(Math.min(width * 0.15, (width * 0.82) / (longestRow * PUNCH_EM), (panelH * 0.62) / Math.max(1, rows.length * 1.1)))
+  const step = Math.max(3, Math.min(8, (durationInFrames * 0.5) / Math.max(1, words.length)))
+  const squeeze = split ? interpolate(frame, [durationInFrames - 6, durationInFrames - 1], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 1
+  const slide = split ? 0 : interpolate(frame, [durationInFrames - 7, durationInFrames - 1], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const wash = interpolate(frame, [0, 3], [0.8, 0], { extrapolateRight: 'clamp' })
+  const [ar, ag, ab] = pHex(accent)
+  const aligns = ['flex-start', 'flex-end', 'center'] as const
+  let wi = 0
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      {split ? (
+        <Freeze frame={0}>
+          <OffthreadVideo src={shot!.src} muted trimBefore={shot!.start ? Math.round(shot!.start * fps) : undefined} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        </Freeze>
+      ) : still ? <Img src={still} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: panelH * squeeze, overflow: 'hidden', background: paper, backgroundImage: `radial-gradient(${dot} 1.6px, transparent 2px)`, backgroundSize: '26px 26px' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: panelH, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: size * 0.1, padding: `${split ? height * 0.1 : 0}px ${width * 0.09}px 0`, transform: `translateX(${slide * width * 1.1}px)` }}>
+          {rows.map((r, ri) => (
+            <div key={ri} style={{ display: 'flex', justifyContent: rows.length === 1 ? 'center' : aligns[ri % 3], gap: size * 0.26 }}>
+              {r.map((w) => {
+                const at = 2 + (wi++) * step
+                const s = spring({ frame: frame - at, fps, config: { damping: 15, mass: 0.5, stiffness: 190 } })
+                return <span key={w + at} style={{ display: 'inline-block', fontFamily: fam(PUNCH_FONT), fontWeight: 400, fontSize: size, lineHeight: 1.05, letterSpacing: '0', color: ink, opacity: Math.min(1, s * 1.6), transform: `translateY(${(1 - s) * size * 0.35}px) scale(${0.9 + 0.1 * s})` }}>{w}</span>
+              })}
+            </div>
+          ))}
+        </div>
+        <AbsoluteFill style={{ background: `rgba(${ar},${ag},${ab},${wash})`, filter: 'blur(20px)' }} />
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+// The end card: the logo thrown in, landing with a squash and settling; the name typed out under it; the call to action under
+// that. A brand with no logo gets a dot in its colour. The logo is shown as uploaded, never recoloured.
+export const PunchEnd: React.FC<{ text: string; accent: string; logo?: string | null; wordmark?: string | null; name?: string; still?: string | null; nameFont: string; durationInFrames: number }> = ({ text, accent, logo, wordmark, name, still, nameFont, durationInFrames }) => {
+  const frame = useCurrentFrame()
+  const { width, height, fps } = useVideoConfig()
+  ensureFont(PUNCH_FONT)
+  const T = 14
+  const t = Math.min(1, frame / T)
+  const ease = 1 - Math.pow(1 - t, 2)
+  const x = interpolate(ease, [0, 1], [-0.2 * width, 0.5 * width])
+  const y = interpolate(ease, [0, 1], [0.66 * height, 0.33 * height]) - Math.sin(Math.PI * t) * 0.12 * height
+  const land = frame >= T ? spring({ frame: frame - T, fps, config: { damping: 9, mass: 0.5, stiffness: 260 } }) : 0
+  const sqX = frame < T ? 1 : 1 + 0.28 * (1 - land), sqY = frame < T ? 1 : 1 - 0.28 * (1 - land)
+  const spin = frame < T ? -28 * (1 - ease) : 0
+  const mark = 260
+  const nm = String(name || '').trim()
+  const per = Math.max(1, Math.min(3, 18 / Math.max(1, nm.length)))
+  const shown = Math.max(0, Math.min(nm.length, Math.floor((frame - (T + 2)) / per) + 1))
+  const wm = interpolate(frame, [T + 2, T + 14], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const cta = spring({ frame: frame - (T + 8), fps, config: { damping: 16, mass: 0.6, stiffness: 160 } })
+  const ctaText = String(text || '').trim().split(/\s+/).filter(Boolean).map(titleWord).join(' ')
+  const nameSize = Math.min(104, Math.max(56, Math.round(1000 / Math.max(8, nm.length))))
+  return (
+    <AbsoluteFill>
+      <StillGround src={still} accent={accent} frame={frame} durationInFrames={durationInFrames} dim={0.4} tint={0.3} />
+      <div style={{ position: 'absolute', left: x - mark / 2, top: y - mark / 2, width: mark, height: mark, transformOrigin: '50% 100%', transform: `rotate(${spin}deg) scale(${sqX}, ${sqY})` }}>
+        {logo ? <Img src={logo} style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 16px 30px rgba(0,0,0,.45))' }} />
+          : <div style={{ width: '62%', height: '62%', margin: '19%', borderRadius: '50%', background: accent, boxShadow: '0 16px 30px rgba(0,0,0,.45)' }} />}
+      </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: height * 0.33 + mark * 0.62, display: 'flex', justifyContent: 'center' }}>
+        {wordmark ? (
+          <Img src={wordmark} style={{ maxWidth: 620, maxHeight: 140, objectFit: 'contain', WebkitMaskImage: `linear-gradient(90deg, #000 ${wm * 130 - 30}%, transparent ${wm * 130}%)`, maskImage: `linear-gradient(90deg, #000 ${wm * 130 - 30}%, transparent ${wm * 130}%)`, filter: 'drop-shadow(0 8px 24px rgba(0,0,0,.35))' }} />
+        ) : nm ? (
+          <div style={{ fontFamily: nameFont, fontWeight: 400, fontSize: nameSize, color: '#FFFFFF', whiteSpace: 'nowrap', textShadow: '0 6px 24px rgba(0,0,0,.4)' }}>
+            {nm.slice(0, Math.max(0, shown - 1))}<span style={{ filter: shown < nm.length ? 'blur(3px)' : undefined }}>{shown > 0 ? nm.charAt(shown - 1) : ''}</span>
+          </div>
+        ) : null}
+      </div>
+      {ctaText ? (
+        <PunchSlips ws={ctaText.toUpperCase().split(' ')} keyIndex={-1} size={punchSlipSize(width, ctaText.toUpperCase().split(' '), 'heavy', 0.085)} look="heavy" accent={accent} seed={1} land={cta} style={{ position: 'absolute', left: 0, right: 0, top: height * 0.6 }} />
+      ) : null}
+    </AbsoluteFill>
+  )
+}
+// LAYERS (reels reference 2, 22 Oct 2026; Daniel: "key priority is spitting out premium products like these videos"): every
+// line shown, not just said. Over a footage beat, under the words: the figure big on a paper tile, counting up; a numbered list
+// point typed in as a header that stays up from point to point; the panel of numbered steps; or the owner's own picture in a
+// card. LAYERS 2 (Daniel, 22 Oct 2026: "There's 1, 2, 3 but the loading stages whatever doesn't flow.. we need these reels to
+// flow better", "watch the motion of them too"): the steps panel stays up from step to step (it slides in once, at step 1),
+// lists every step, scrolls to the one being said, ticks the ones done, and its bar fills through each step as it plays - so
+// across the cut it carries on where it left off (Native's split panel, read at 15 frames a second, 22 Oct). Nothing sits
+// still: the tile and the card float, the bar fills. Paper and ink from punchPaper (4.5:1); no picture cropped.
+// How far the footage moves up while the steps panel is up, so what was filmed stays in the top part.
+export const punchLift = (layer: ReelLayer | null | undefined, frame: number, fps: number, height: number): number => {
+  if (!layer || layer.kind !== 'steps') return 0
+  const up = layer.n === 1 ? spring({ frame: frame - 2, fps, config: { damping: 18, mass: 0.8, stiffness: 120 } }) : 1
+  return up * height * 0.2
+}
+const punchCount = (text: string, t: number): string => {
+  const m = String(text).match(/^([^\d]*)(\d[\d,]*(?:\.\d+)?)(.*)$/)
+  if (!m || t >= 1) return text
+  const raw = m[2].replace(/,/g, '')
+  const dec = (raw.split('.')[1] || '').length
+  const v = Number(raw) * t
+  const s = dec ? v.toFixed(dec) : String(Math.round(v))
+  return m[1] + (m[2].includes(',') ? Number(s).toLocaleString('en-GB', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : s) + m[3]
+}
+export const PunchLayer: React.FC<{ layer: ReelLayer; accent: string; durationInFrames?: number }> = ({ layer, accent, durationInFrames = 90 }) => {
+  const frame = useCurrentFrame()
+  const { width, height, fps } = useVideoConfig()
+  ensureFont(PUNCH_FONT)
+  ensureFont('Inter')
+  const { paper, ink, dot } = punchPaper(accent)
+  const head = fam(PUNCH_FONT)
+  const body = fam('Inter')
+  const float = Math.sin(frame / 17) * 7
+  if (layer.kind === 'number') {
+    const s = spring({ frame: frame - 3, fps, config: { damping: 11, mass: 0.7, stiffness: 160 } })
+    const count = interpolate(frame, [3, 20], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) })
+    const size = Math.round(Math.min(width * 0.25, (width * 0.68) / Math.max(1, layer.text.length * PUNCH_EM)))
+    return (
+      <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', paddingTop: height * 0.06 }}>
+        <div style={{ transform: `translateY(${float}px) scale(${0.4 + 0.6 * s}) rotate(${(1 - s) * -4}deg)`, opacity: Math.min(1, s * 3), background: paper, borderRadius: 44, padding: `${Math.round(size * 0.14)}px ${Math.round(size * 0.3)}px ${Math.round(size * 0.16)}px`, boxShadow: '0 30px 60px -20px rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ fontFamily: head, fontWeight: 400, fontSize: size, lineHeight: 1, color: ink, letterSpacing: '-0.01em', fontVariantNumeric: 'lining-nums tabular-nums', whiteSpace: 'nowrap' }}>{punchCount(layer.text, count)}</div>
+          <div style={{ height: 14, width: `${Math.round(64 * Math.min(1, Math.max(0, (frame - 14) / 8)))}%`, background: accent, borderRadius: 100, marginTop: Math.round(size * 0.1) }} />
+        </div>
+      </AbsoluteFill>
+    )
+  }
+  if (layer.kind === 'label') {
+    // The header stays up from point to point: it slides in at point 1; at the next point the number turns over and the words
+    // type again (ManyChat's section labels, 22 Oct).
+    const full = layer.text
+    const shown = full.slice(0, Math.max(0, Math.floor((frame - 2) / 1.1)))
+    const typing = shown.length < full.length
+    // Up to two lines, so a long header stays readable rather than shrinking to a thread (never cut off, never tiny - 22 Oct).
+    const oneLine = (width * 0.62) / Math.max(1, full.length * 0.6)
+    const two = oneLine < width * 0.045
+    const fs = Math.round(Math.min(width * 0.06, two ? (width * 0.62 * 1.85) / Math.max(1, full.length * 0.6) : oneLine))
+    const inS = layer.n === 1 ? spring({ frame, fps, config: { damping: 16, mass: 0.6, stiffness: 180 } }) : 1
+    const flip = layer.n === 1 ? 1 : interpolate(frame, [0, 7], [0, 1], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) })
+    const disc = fs * 1.55
+    return (
+      <AbsoluteFill>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: height * 0.125, display: 'flex', justifyContent: 'center', opacity: Math.min(1, inS * 2), transform: `translateY(${(1 - inS) * -24}px)` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 22, background: paper, borderRadius: two ? 40 : 100, padding: '18px 40px 18px 18px', boxShadow: '0 24px 50px -22px rgba(0,0,0,0.6)', maxWidth: width * 0.86 }}>
+            <span style={{ position: 'relative', width: disc, height: disc, borderRadius: 100, background: ink, overflow: 'hidden', flexShrink: 0 }}>
+              {layer.n > 1 ? <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: paper, fontFamily: head, fontSize: fs * 0.92, transform: `translateY(${-flip * disc}px)` }}>{layer.n - 1}</span> : null}
+              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: paper, fontFamily: head, fontSize: fs * 0.92, fontVariantNumeric: 'lining-nums', transform: `translateY(${(1 - flip) * disc}px)` }}>{layer.n}</span>
+            </span>
+            <span style={{ fontFamily: body, fontWeight: 800, fontSize: fs, lineHeight: 1.12, color: ink, whiteSpace: two ? 'normal' : 'nowrap', width: two ? width * 0.62 : undefined, textWrap: 'balance' } as React.CSSProperties}>{shown}<span style={{ opacity: typing && frame % 16 < 10 ? 1 : 0 }}>|</span></span>
+          </div>
+        </div>
+      </AbsoluteFill>
+    )
+  }
+  if (layer.kind === 'steps') {
+    const items = layer.items && layer.items.length >= layer.n ? layer.items : Array.from({ length: layer.of }, (_, k) => (k === layer.n - 1 ? layer.text : ''))
+    const up = layer.n === 1 ? spring({ frame: frame - 2, fps, config: { damping: 18, mass: 0.8, stiffness: 120 } }) : 1
+    const top = height * 0.56
+    // The steps move up one place from the last step to this one in the first 10 frames (at step 1 they are already there):
+    // the step being said large, the next one small under it, the one before going up and out with its tick.
+    const move = layer.n === 1 ? 1 : interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp', easing: Easing.inOut(Easing.cubic) })
+    const at = layer.n - 1 - (1 - move)
+    const longest = items.reduce((m, t) => Math.max(m, t.length), 0)
+    const disc = width * 0.11
+    const textW = width * 0.84 - disc - 30
+    // As big as three lines allow (the panel is 44% of the picture: the step being said fills it, as the drawing does).
+    // NEVER CUT OFF (Daniel, 22 Oct 2026: "this step 2 looks broken though with it being cut off ... if there's too much text
+    // anywhere fade it in"): the size is brought down until the step being said and the first line of the next fit above the
+    // list's bottom fade; anything below that fades out, never sliced by the frame's edge.
+    const linesAt = (n: number, f: number) => Math.max(1, Math.min(3, Math.ceil((n * 0.72 * f) / (textW * 0.92))))
+    const room = (height * (1 - 0.56 - 0.075)) * 0.84
+    let fs = Math.round(Math.min(width * 0.095, (textW * 2.5) / Math.max(8, longest * 0.72)))
+    for (let i = 0; i < 4; i++) {
+      const need = fs * (0.6 + 1.1 * linesAt(longest, fs) + 0.7 + 0.6)
+      if (need <= room) break
+      fs = Math.floor((fs * room) / need)
+    }
+    const lines = linesAt(longest, fs)
+    const slot = fs * (1.1 * lines + 0.7)
+    // This step's part of the bar fills through the beat; the steps before are full.
+    const fill = interpolate(frame, [0, Math.max(2, durationInFrames - 2)], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    const place = (p: number) => p <= 0
+      ? { y: p * slot * 0.7, k: 1 + p * 0.5, o: Math.max(0, 1 + p * 1.3) }
+      : { y: Math.min(p, 1) * slot + Math.max(0, p - 1) * slot * 0.5, k: 1 - 0.5 * Math.min(p, 1), o: p <= 1 ? 1 - 0.55 * p : Math.max(0, 0.45 - 0.45 * (p - 1)) }
+    return (
+      <AbsoluteFill>
+        <div style={{ position: 'absolute', left: 0, right: 0, top, bottom: 0, overflow: 'hidden', transform: `translateY(${(1 - up) * (height - top)}px)`, background: paper, backgroundImage: `radial-gradient(${dot} 2.4px, transparent 2.6px)`, backgroundSize: '34px 34px', borderRadius: '48px 48px 0 0', boxShadow: '0 -24px 60px -30px rgba(0,0,0,0.6)' }}>
+          <div style={{ display: 'flex', gap: 14, padding: `${height * 0.04}px ${width * 0.08}px 0` }}>
+            {Array.from({ length: layer.of }).map((_, k) => (
+              <span key={k} style={{ height: 12, flex: 1, borderRadius: 100, background: 'rgba(0,0,0,0.12)', overflow: 'hidden' }}>
+                <span style={{ display: 'block', height: '100%', borderRadius: 100, background: ink, width: `${(k < layer.n - 1 ? 1 : k === layer.n - 1 ? fill : 0) * 100}%` }} />
+              </span>
+            ))}
+          </div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: height * 0.075, bottom: 0, overflow: 'hidden', WebkitMaskImage: 'linear-gradient(180deg, transparent 0, #000 8%, #000 86%, transparent 100%)', maskImage: 'linear-gradient(180deg, transparent 0, #000 8%, #000 86%, transparent 100%)' }}>
+            {items.map((t, k) => {
+              const p = k - at
+              if (p < -1.2 || p > 2.2) return null
+              const { y, k: sc, o } = place(p)
+              const done = k < layer.n - 1
+              const now = k === layer.n - 1
+              return (
+                <div key={k} style={{ position: 'absolute', left: width * 0.08, width: width * 0.84, top: fs * 0.6, display: 'flex', alignItems: 'flex-start', gap: 30, opacity: o, transformOrigin: '0 0', transform: `translateY(${y}px) scale(${sc})` }}>
+                  <span style={{ width: disc, height: disc, borderRadius: 100, background: done || now ? ink : 'transparent', border: done || now ? 'none' : `5px solid ${ink}`, boxSizing: 'border-box', color: paper, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: head, fontSize: disc * 0.5, fontVariantNumeric: 'lining-nums', flexShrink: 0, marginTop: fs * 0.02 }}>
+                    {done ? <svg width={disc * 0.56} height={disc * 0.56} viewBox="0 0 24 24" fill="none" stroke={paper} strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg> : <span style={{ color: now ? paper : ink }}>{k + 1}</span>}
+                  </span>
+                  <span style={{ width: textW, fontFamily: head, fontWeight: 400, fontSize: fs, lineHeight: 1.08, color: ink, textWrap: 'balance' } as React.CSSProperties}>{t}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </AbsoluteFill>
+    )
+  }
+  // A card: the owner's picture, whole (never cropped), on a paper edge, floating under the words.
+  const s = spring({ frame: frame - 2, fps, config: { damping: 14, mass: 0.7, stiffness: 150 } })
+  return (
+    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'flex-start', paddingTop: height * 0.34 }}>
+      <div style={{ transform: `translateY(${float}px) scale(${0.82 + 0.18 * s}) rotate(${(1 - s) * 3 - 2}deg)`, opacity: Math.min(1, s * 2.5), background: paper, padding: 12, borderRadius: 40, boxShadow: '0 40px 80px -24px rgba(0,0,0,0.7)' }}>
+        <Img src={layer.image} style={{ display: 'block', maxWidth: width * 0.7, maxHeight: height * 0.36, borderRadius: 30 }} />
+      </div>
+    </AbsoluteFill>
+  )
+}
+// ===== END PUNCH LOOK =====
+
 export const Beat: React.FC<{
   text: string
   isHook: boolean
@@ -593,7 +1127,13 @@ export const Beat: React.FC<{
   headFont?: { family: string; weight: number } | null
   // A saved character's cut-out on a text card or the end card (C1).
   character?: string | null
-}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech, spoken, tone, still, headFont, clipStart, speed, character }) => {
+  // A text card's ground: the next shot's clip, frozen on its first frame (batch 7).
+  shot?: { src: string; start?: number } | null
+  // The call to action's keyword, held above the last words (punch look, R1).
+  heading?: string | null
+  // A layer over the footage in the punch look (reels reference 2): checked by cleanLayer.
+  layer?: ReelLayer | null
+}> = ({ text, isHook, clipUrl, accent, index, durationInFrames, captionStyle, captionConfig, emphasis, zone, beatType, poster, brandName, brandLogo, brandWordmark, fieldTone, fieldColor, fieldStyle, kenBurns, grade, speech, spoken, tone, still, headFont, clipStart, speed, character, shot, heading, layer }) => {
   const saysIt = !isHook && Array.isArray(spoken) && spoken.length > 0
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
@@ -634,17 +1174,28 @@ export const Beat: React.FC<{
   // brand-colour field (alternating polarity per beat for rhythm) with the caption
   // rendered at hook scale. Footage and caption zones don't apply here.
   // MUST stay byte-identical to the frontend mirror src/remotion/ReelVideo.tsx.
+  // ---- PUNCH CARDS (R1, 22 Oct 2026): in the punch look a text card is paper and the end card throws the logo in.
+  const punch = captionStyle === 'punch'
+  if (punch && beatType === 'text' && !fieldStyle) {
+    const fx = (fieldColor && /^#[0-9a-fA-F]{3,8}$/.test(fieldColor)) ? fieldColor : accent
+    return <AbsoluteFill style={{ opacity }}><PunchPaper text={text} accent={fx} durationInFrames={durationInFrames} shot={shot} still={still} /><FilmFinish frame={frame} /></AbsoluteFill>
+  }
+  if (punch && beatType === 'cta' && !fieldStyle) {
+    const fx = (fieldColor && /^#[0-9a-fA-F]{3,8}$/.test(fieldColor)) ? fieldColor : accent
+    return <AbsoluteFill style={{ opacity }}><PunchEnd text={text} accent={fx} logo={brandLogo} wordmark={brandWordmark} name={brandName} still={still} nameFont={WORDMARK_FONT} durationInFrames={durationInFrames} /><FilmFinish frame={frame} /></AbsoluteFill>
+  }
+  // ---- end PUNCH CARDS
   // TEXT CARD (P2): the words over a softened still from the reel (or the plain brand colour), in
   // the headline font. The storyboard's own field styles (fieldStyle) keep the old stage below.
   if (beatType === 'text' && !fieldStyle) {
     const fx = (fieldColor && /^#[0-9a-fA-F]{3,8}$/.test(fieldColor)) ? fieldColor : accent
-    const ink = still ? '#FFFFFF' : idealText(fx)
+    const ink = (still || (shot && shot.src)) ? '#FFFFFF' : idealText(fx)
     const cardCfg: any = { ...(headCfg || {}), [styleKey]: { ...(((headCfg || {}) as any)[styleKey] || {}), textColor: ink } }
     return (
       <AbsoluteFill style={{ opacity }}>
-        <StillGround src={still} accent={fx} frame={frame} durationInFrames={durationInFrames} />
+        <StillGround src={still} accent={fx} frame={frame} durationInFrames={durationInFrames} shot={shot} />
         <div style={{ position: 'absolute', inset: 0, transform: `scale(${1 + (frame / Math.max(1, durationInFrames)) * 0.03})` }}>
-          <Captions text={text} accent={still ? fx : ink} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cardCfg} emphasis={emphasis} zone={character ? 'top' : undefined} speech={speech} />
+          <Captions text={text} accent={(still || (shot && shot.src)) ? fx : ink} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cardCfg} emphasis={emphasis} zone={character ? 'top' : undefined} speech={speech} />
         </div>
         <CardCharacter src={character} size={CARD_CHARACTER.text} frame={frame} fps={fps} durationInFrames={durationInFrames}
           avoid={<Captions text={text} accent={fx} isHook style={captionStyle} durationInFrames={durationInFrames} captionConfig={cardCfg} emphasis={emphasis} zone="top" speech={speech} />} />
@@ -751,7 +1302,9 @@ export const Beat: React.FC<{
             <div style={{ position: 'absolute', top: 18, left: '50%', transform: 'translateX(-50%)', width: '26%', height: 22, borderRadius: 100, background: '#141210' }} />
           </div>
         </AbsoluteFill>
-        {saysIt
+        {punch
+          ? <PunchCaptions words={saysIt ? spoken! : punchLineWords(text, durationInFrames, speech)} heading={heading} accent={accent} font={headFont} />
+          : saysIt
           ? <SpokenCaptions words={spoken!} accent={accent} style={captionStyle} captionConfig={captionConfig} />
           : <Captions text={text} accent={accent} isHook={false} style={captionStyle} durationInFrames={durationInFrames} captionConfig={captionConfig} emphasis={emphasis} speech={speech} />}
       </AbsoluteFill>
@@ -827,7 +1380,7 @@ export const Beat: React.FC<{
   return (
     <AbsoluteFill style={{ opacity, backgroundColor: '#000' }}>
       <ToneFilter id={toneId} tone={tone} />
-      <AbsoluteFill style={{ transform: `scale(${scale}) translateX(${panX}px)`, filter: lookFilter }}>
+      <AbsoluteFill style={{ transform: `scale(${scale}) translateX(${panX}px) translateY(${-punchLift(punch && !isHook ? layer : null, frame, fps, 1920)}px)`, filter: lookFilter }}>
         {clipUrl && !clipFailed ? (
           // Starts a moment in when the backend chose a start point (P3: past the camera settling).
           <OffthreadVideo src={clipUrl} muted playbackRate={speed && speed > 1 ? speed : undefined} trimBefore={clipStart ? Math.round(clipStart * fps) : undefined} onError={() => setClipFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -855,8 +1408,8 @@ export const Beat: React.FC<{
         }}
       />
 
-      {/* TEXT POCKET (P2): a soft shade behind the words, where they sit - cream words on a mid-grey wall measured about 3:1 in the test render (readability law: words on a contrasting ground). */}
-      <AbsoluteFill style={{ background: `radial-gradient(ellipse 78% 15% at 50% ${saysIt ? 61 : zone === 'top' ? 19 : (zone === 'middle' || (!zone && isHook)) ? 43 : 61}%, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.24) 55%, rgba(0,0,0,0) 100%)` }} />
+      {/* TEXT POCKET (P2): a soft shade behind the words, where they sit - cream words on a mid-grey wall measured about 3:1 in the test render (readability law: words on a contrasting ground). None in the punch look since 22 Oct 2026: its words are on paper. */}
+      <AbsoluteFill style={{ background: `radial-gradient(ellipse 78% 15% at 50% ${punch ? 27 : saysIt ? 61 : zone === 'top' ? 19 : (zone === 'middle' || (!zone && isHook)) ? 43 : 61}%, rgba(0,0,0,${punch ? 0 : 0.42}) 0%, rgba(0,0,0,${punch ? 0 : 0.24}) 55%, rgba(0,0,0,0) 100%)` }} />
       <FilmFinish frame={frame} />
       {/* ---- SPED UP TAG (reels brief B2, 21 Oct 2026): a sped-up clip says so, so a screen is never passed off as real
           time. Small, top left, inside the safe area (below the top 14%); lower down when the words sit at the top. */}
@@ -864,7 +1417,21 @@ export const Beat: React.FC<{
         <div style={{ position: 'absolute', left: 64, top: zone === 'top' ? 560 : 290, padding: '10px 22px', borderRadius: 100, background: 'rgba(0,0,0,0.5)', color: '#FFFFFF', fontFamily: 'Inter, "DM Sans", Arial, sans-serif', fontSize: 30, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Sped up {speed}x</div>
       ) : null}
       {/* ---- end SPED UP TAG */}
-      {saysIt
+      {punch
+        // ---- PUNCH CAPTIONS (R1): the opening title whole from frame 0; then the words as they are said (or the line paced
+        // through the beat), with the call to action's keyword held above them on the last shot.
+        ? (isHook ? <PunchTitle text={text} accent={accent} font={headFont} /> : (
+          // ---- PUNCH LAYERS (reels reference 2, 22 Oct 2026): the beat's layer under its words. A list label or a step says
+          // the line itself, so the words above it stay off, voice or not (Daniel, 22 Oct 2026: "a lot of the text and layers
+          // is duplicated"); the call to action's keyword wins over a label, and then the words show with it.
+          <>
+            {layer && !(layer.kind === 'label' && heading) ? <PunchLayer layer={layer} accent={accent} durationInFrames={durationInFrames} /> : null}
+            {(!layer || (layer.kind !== 'label' && layer.kind !== 'steps') || (layer.kind === 'label' && heading)) ? <PunchCaptions words={saysIt ? spoken! : punchLineWords(text, durationInFrames, speech)} heading={heading} accent={accent} font={headFont} zone={layer ? null : zone} dock={layer && layer.kind === 'number' ? punchNumberTop(1080, 1920, layer.text) : null} shown={layer && layer.kind === 'number' ? layer.text : null} /> : null}
+          </>
+          // ---- end PUNCH LAYERS
+        ))
+        // ---- end PUNCH CAPTIONS
+        : saysIt
         ? <SpokenCaptions words={spoken!} accent={accent} style={captionStyle} captionConfig={captionConfig} />
         : isHook && index === 0
           // ---- OPENING WORDS ON FRAME 0 (Daniel, 21 Oct 2026, decision 3 A): the reel's first frame is its cover in the
